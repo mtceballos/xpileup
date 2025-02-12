@@ -8,3 +8,5 @@ flux*/
 *.csv
 .ipynb_checkpoints/
 __pycache__/
+slurm*err
+slurm*out
