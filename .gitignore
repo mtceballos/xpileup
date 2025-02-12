@@ -1,0 +1,10 @@
+output_ipynb/
+flux*/
+*.txt
+*.fits
+*.xcm
+*.xml
+*~
+*.csv
+.ipynb_checkpoints/
+__pycache__/
