@@ -10,3 +10,4 @@ flux*/
 __pycache__/
 slurm*err
 slurm*out
+.~lock*
