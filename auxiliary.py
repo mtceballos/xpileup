@@ -1,10 +1,10 @@
 import math
 
+verbose = 1
 def vprint(*args, **kwargs):
     """
     Print function that can be turned on/off with the verbose variable.
     """
-    verbose = kwargs.pop("verbose", 1)
     if verbose > 0:
         print(*args, **kwargs)
 
