@@ -154,3 +154,39 @@ def is_inside_conf_interval(xvalue, yvalue, poly_top_coeffs, poly_bottom_coeffs)
         return True
     else:
         return False
+
+def get_sirena_info(ph_id, arrival_time, sirena_file):
+    """
+    Get the SIRENA information from the SIRENA file for a given PH_ID and TIME.
+    
+    Parameters:
+        ph_id (int): The PH_ID of the event to search for in the SIRENA file.
+        arrival_time (float): The arrival time of the event (from piximpact file for example) to search for in the SIRENA file.
+        sirena_file (str): The path to the SIRENA file to be read.
+        
+    Returns:
+        dict: A dictionary containing the SIRENA information (TIME, SIGNAL, ELOWRES, AVG4SD) for the event with the specified PH_ID and TIME.
+    """
+    
+    with fits.open(sirena_file) as hdul:
+        data = hdul[1].data
+        PH_ID = data['PH_ID']
+        TIME = data['TIME']
+        SIGNAL = data['SIGNAL']
+        ELOWRES = data['ELOWRES']
+        AVG4SD = data['AVG4SD']
+        for irow in range(len(PH_ID)):
+            # find the rows where the PH_ID column matches the ph_id
+            if not ph_id in PH_ID[irow]:
+                continue
+            irows_same_PH_ID = np.where((PH_ID == PH_ID[irow]).all(axis=1))[0]
+        # get the closest arrival time to the specified arrival_time among the rows with the same PH_ID
+        time_diff = np.abs(TIME[irows_same_PH_ID] - arrival_time)
+        closest_time_index = np.argmin(time_diff)
+        closest_time_row = irows_same_PH_ID[closest_time_index]
+        # get the SIRENA information for the event
+        sirena_info = {'SIGNAL': SIGNAL[closest_time_row], 'TIME': TIME[closest_time_row], 
+                       'ELOWRES': ELOWRES[closest_time_row], 'AVG4SD': AVG4SD[closest_time_row]}
+    return sirena_info
+
+        
