@@ -1,4 +1,13 @@
 import math
+import os
+import glob
+from subprocess import run, PIPE, STDOUT
+
+from astropy.io import fits
+
+import numpy as np
+import numpy.polynomial.polynomial as poly
+
 
 verbose = 1
 def vprint(*args, **kwargs):
@@ -9,43 +18,41 @@ def vprint(*args, **kwargs):
         print(*args, **kwargs)
 
 
-def time_to_observe_n_counts(rate, time_interval, n):
+def time_to_observe_n_pairs(count_rate, pairs_separation, npairs):
     """
-    Calculate the expected time to observe n counts in a given time interval under Poisson statistics.
+    Calculate the time needed to observe a given number of pairs in a Poisson process.
 
-    Parameters:
-        rate (float): The count rate of the source (counts per second).
-        time_interval (float): The time interval (in seconds) during which we want n counts.
-        n (int): The number of counts to observe.
+    For this:
 
-    Returns:
-        float: The expected observation time (in seconds) to see n counts in the given time interval.
+    d = pairs_separation
+    ctr = count_rate
+
+    1. calculate how many pairs of events you have in a Poisson process where the distance 
+    between two events is less than a quantity (d)
+        1.1 Determine the probability of a pair: the probability that the distance between 
+        two consecutive events is less than (d) is:
+             P(T < d) = 1 - exp(-ctr * d)
+
+        1.2 Calculate the expected number of pairs: Having a time interval (T) and an event rate (\lambda), 
+        the expected number of events in that interval is (\lambda T). 
+        Each pair of consecutive events can be considered a potential pair. 
+        Therefore, the expected number of pairs is approximately (\lambda T - 1) 
+        (since the first event has no previous event with which to form a pair).
+
+        1.3 Multiply by the probability of a pair: The expected number of pairs where the distance between 
+        events is less than (d) is the expected number of pairs multiplied by the probability that the 
+        distance between two events is less than (d):
+
+        E[pairs] = npairs = (ctr * T - 1) * (1 - exp(-ctr * d))
+    2. Get the time needed to observe a given number of pairs:
+        2.1 Solve for T in the equation above:
+            ctr * T - 1 = npairs / (1 - exp(-ctr * d))
+            T = ((npairs / (1 - exp(-ctr * d)) + 1)/ ctr
     """
-    if n <= 0:
-        raise ValueError("The number of counts (n) must be a positive integer.")
-
-    # Calculate the expected number of counts in the time interval
-    mu = rate * time_interval
-
-    # Calculate the probability of observing n counts using the Poisson formula
-    p_n = (mu ** n * math.exp(-mu)) / math.factorial(n)
-
-    # Calculate the rate of observing n counts
-    rate_of_n_counts = p_n / time_interval
-
-    # Return the expected observation time (reciprocal of the rate)
-    return 1 / rate_of_n_counts
-
-import os
-import glob
-from subprocess import run, PIPE, STDOUT
-
-from astropy.io import fits
-
-import numpy as np
-import numpy.polynomial.polynomial as poly
-import matplotlib.pyplot as plt
-
+    
+    # calculate the time needed to observe npairs pairs
+    time = ((npairs / (1 - math.exp(-count_rate * pairs_separation))) + 1) / count_rate
+    return time
 
 def get_max_photons(simfiles):
     """
@@ -190,16 +197,18 @@ def is_inside_conf_interval(xvalue, yvalue, poly_top_coeffs, poly_bottom_coeffs)
 def get_sirena_info(ph_id, arrival_time, sirena_file):
     """
     Get the SIRENA information from the SIRENA file for a given PH_ID and TIME.
-          HACER QUE PUEDA LEER UNA LISTA DE FOTONES Y DEVOLVER UNA LISTA DE DICCIONARIOS CON LA INFO DE SIRENA!!!!!!!!!!!!!!!!
+          
     Parameters:
-        ph_id (int): The PH_ID of the event to search for in the SIRENA file.
-        arrival_time (float): The arrival time of the event (from piximpact file for example) to search for in the SIRENA file.
+        ph_id (int list or array): The PH_ID of the event to search for in the SIRENA file.
+        arrival_time (float list or array): The arrival time of the event (from piximpact file for example) to search for in the SIRENA file.
         sirena_file (str): The path to the SIRENA file to be read.
         
     Returns:
-        dict: A dictionary containing the SIRENA information (TIME, SIGNAL, ELOWRES, AVG4SD) for the event with the specified PH_ID and TIME.
+        dict of dict: A list of dictionaries containing the SIRENA information (TIME, SIGNAL, ELOWRES, AVG4SD) for the event with the specified PH_ID and TIME.
     """
-    
+    #initialize the dictionary of dictionaries to store the SIRENA information
+    sirena_info = {}
+    # open the SIRENA file
     with fits.open(sirena_file) as hdul:
         data = hdul[1].data
         PH_ID = data['PH_ID']
@@ -209,19 +218,19 @@ def get_sirena_info(ph_id, arrival_time, sirena_file):
         AVG4SD = data['AVG4SD']
         GRADE1 = data['GRADE1']
         GRADE2 = data['GRADE2']
-        for irow in range(len(PH_ID)):
-            # find the rows where the PH_ID column matches the ph_id
-            if not ph_id in PH_ID[irow]:
+        for i in range(len(ph_id)):
+            in_ph_id = ph_id[i]
+            in_arrival_time = arrival_time[i]
+            irows_with_in_ph_id = [i for i, row in enumerate(PH_ID) if np.all(np.isin(in_ph_id, row))]
+            if len(irows_with_in_ph_id) == 0:
+                vprint(f"PH_ID {in_ph_id} not found in the SIRENA file.")
                 continue
-            irows_same_PH_ID = np.where((PH_ID == PH_ID[irow]).all(axis=1))[0]
-        # get the closest arrival time to the specified arrival_time among the rows with the same PH_ID
-        time_diff = np.abs(TIME[irows_same_PH_ID] - arrival_time)
-        closest_time_index = np.argmin(time_diff)
-        closest_time_row = irows_same_PH_ID[closest_time_index]
-        # get the SIRENA information for the event
-        sirena_info = {'SIGNAL': SIGNAL[closest_time_row], 'TIME': TIME[closest_time_row], 
-                       'ELOWRES': ELOWRES[closest_time_row], 'AVG4SD': AVG4SD[closest_time_row],
-                       'GRADE1': GRADE1[closest_time_row], 'GRADE2': GRADE2[closest_time_row]}
+            # get the closest arrival time to the specified arrival_time among the rows with the same PH_ID
+            time_diff = np.abs(TIME[irows_with_in_ph_id] - in_arrival_time)
+            closest_time_index = np.argmin(time_diff)
+            closest_time_row = irows_with_in_ph_id[closest_time_index]
+            # get the SIRENA information for the event
+            sirena_info[in_ph_id] = {'SIGNAL': SIGNAL[closest_time_row], 'TIME': TIME[closest_time_row], 
+                        'ELOWRES': ELOWRES[closest_time_row], 'AVG4SD': AVG4SD[closest_time_row],
+                        'GRADE1': GRADE1[closest_time_row], 'GRADE2': GRADE2[closest_time_row]}
     return sirena_info
-
-        
