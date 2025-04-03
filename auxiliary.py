@@ -200,7 +200,7 @@ def get_sirena_info(sirena_file, impact_file):
           
     Parameters:
         sirena_file (str): The path to the SIRENA file to be read.
-        impact_file (srt): The path to the impact file to be read.
+        impact_file (srt): The path to the impact file to be read
         
     Returns:
         dict of dict: A list of dictionaries containing the SIRENA information (TIME, SIGNAL, ELOWRES, AVG4SD_PROBPHID) 
@@ -213,7 +213,6 @@ def get_sirena_info(sirena_file, impact_file):
         # get the PROBABLE PH_ID and arrival time
         ph_id_imp = data_impact['PH_ID'].copy()
         time_imp = data_impact['TIME'].copy()
-        pixel_imp = data_impact['PIXEL'].copy()
 
     # open the SIRENA file
     with fits.open(sirena_file) as hdul:
@@ -229,7 +228,6 @@ def get_sirena_info(sirena_file, impact_file):
         AVG4SD = data['AVG4SD'].copy()
         GRADE1 = data['GRADE1'].copy()
         GRADE2 = data['GRADE2'].copy()
-        PIXEL = data['PIXEL'].copy()
     
         for irow in range(len(SIGNAL)):
             time_irow = TIME[irow]
@@ -238,7 +236,6 @@ def get_sirena_info(sirena_file, impact_file):
             avg4sd_irow  = AVG4SD[irow]
             grade1_irow = GRADE1[irow]
             grade2_irow = GRADE2[irow]
-            pixel_irow = PIXEL[irow]
 
             ph_nonzero_sequence = PH_ID[irow][np.nonzero(PH_ID[irow])]
             number_of_ph_zeros = len(PH_ID[irow]) - len(ph_nonzero_sequence)
@@ -254,8 +251,12 @@ def get_sirena_info(sirena_file, impact_file):
                 # more than one photon in the record: check corresponding time in impact file
                 min_time_diff = float('inf')
                 for ph_id in ph_nonzero_sequence:
-                    # get the time of the photon in the impact file: same PH_ID and same PIXEL
-                    time_ph_piximpact = time_imp[ph_id_imp == ph_id and pixel_imp == pixel_irow]
+                    # get the time of the photon in the impact file: same PH_ID 
+                    index_match = np.where((ph_id_imp == ph_id))
+                    # check if there is a match
+                    if len(index_match[0]) == 0:
+                        raise ValueError(f"PH_ID {ph_id} not found in impact file")
+                    time_ph_piximpact = time_imp[index_match]
                     time_diff = abs(time_ph_piximpact-time_irow)
                     if time_diff < min_time_diff:
                         min_time_diff = time_diff
@@ -266,5 +267,5 @@ def get_sirena_info(sirena_file, impact_file):
                 'SIGNAL': signal_irow, 'TIME': time_irow, 
                 'ELOWRES': elowres_irow, 'AVG4SD': avg4sd_irow,
                 'GRADE1': grade1_irow, 'GRADE2': grade2_irow, 
-                'PH_ID': ph_id_irow, 'PIXEL': pixel_irow}
+                'PROBPHID': ph_id_irow}
     return sirena_info
