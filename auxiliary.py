@@ -194,43 +194,77 @@ def is_inside_conf_interval(xvalue, yvalue, poly_top_coeffs, poly_bottom_coeffs)
     else:
         return False
 
-def get_sirena_info(ph_id, arrival_time, sirena_file):
+def get_sirena_info(sirena_file, impact_file):
     """
-    Get the SIRENA information from the SIRENA file for a given PH_ID and TIME.
+    Get the SIRENA information for all the reconstructed photons (including PROBABLE PH_ID)
           
     Parameters:
-        ph_id (int list or array): The PH_ID of the event to search for in the SIRENA file.
-        arrival_time (float list or array): The arrival time of the event (from piximpact file for example) to search for in the SIRENA file.
         sirena_file (str): The path to the SIRENA file to be read.
+        impact_file (srt): The path to the impact file to be read.
         
     Returns:
-        dict of dict: A list of dictionaries containing the SIRENA information (TIME, SIGNAL, ELOWRES, AVG4SD) for the event with the specified PH_ID and TIME.
+        dict of dict: A list of dictionaries containing the SIRENA information (TIME, SIGNAL, ELOWRES, AVG4SD_PROBPHID) 
+        for all the reconstructed photons.
     """
-    #initialize the dictionary of dictionaries to store the SIRENA information
-    sirena_info = {}
+
+    # open the impact file
+    with fits.open(impact_file) as hdul_impact:
+        data_impact = hdul_impact[1].data
+        # get the PROBABLE PH_ID and arrival time
+        ph_id_imp = data_impact['PH_ID'].copy()
+        time_imp = data_impact['TIME'].copy()
+        pixel_imp = data_impact['PIXEL'].copy()
+
     # open the SIRENA file
     with fits.open(sirena_file) as hdul:
+        nrecons = hdul[1].header['NAXIS2']
+        #initialize a list of dictionaries to store the SIRENA information
+        sirena_info = [{} for _ in range(nrecons)]
+        # read the data and store
         data = hdul[1].data
-        PH_ID = data['PH_ID']
-        TIME = data['TIME']
-        SIGNAL = data['SIGNAL']
-        ELOWRES = data['ELOWRES']
-        AVG4SD = data['AVG4SD']
-        GRADE1 = data['GRADE1']
-        GRADE2 = data['GRADE2']
-        for i in range(len(ph_id)):
-            in_ph_id = ph_id[i]
-            in_arrival_time = arrival_time[i]
-            irows_with_in_ph_id = [i for i, row in enumerate(PH_ID) if np.all(np.isin(in_ph_id, row))]
-            if len(irows_with_in_ph_id) == 0:
-                vprint(f"PH_ID {in_ph_id} not found in the SIRENA file.")
-                continue
-            # get the closest arrival time to the specified arrival_time among the rows with the same PH_ID
-            time_diff = np.abs(TIME[irows_with_in_ph_id] - in_arrival_time)
-            closest_time_index = np.argmin(time_diff)
-            closest_time_row = irows_with_in_ph_id[closest_time_index]
-            # get the SIRENA information for the event
-            sirena_info[in_ph_id] = {'SIGNAL': SIGNAL[closest_time_row], 'TIME': TIME[closest_time_row], 
-                        'ELOWRES': ELOWRES[closest_time_row], 'AVG4SD': AVG4SD[closest_time_row],
-                        'GRADE1': GRADE1[closest_time_row], 'GRADE2': GRADE2[closest_time_row]}
+        PH_ID = data['PH_ID'].copy()
+        TIME = data['TIME'].copy()
+        SIGNAL = data['SIGNAL'].copy()
+        ELOWRES = data['ELOWRES'].copy()
+        AVG4SD = data['AVG4SD'].copy()
+        GRADE1 = data['GRADE1'].copy()
+        GRADE2 = data['GRADE2'].copy()
+        PIXEL = data['PIXEL'].copy()
+    
+        for irow in range(len(SIGNAL)):
+            time_irow = TIME[irow]
+            signal_irow = SIGNAL[irow]
+            elowres_irow = ELOWRES[irow]
+            avg4sd_irow  = AVG4SD[irow]
+            grade1_irow = GRADE1[irow]
+            grade2_irow = GRADE2[irow]
+            pixel_irow = PIXEL[irow]
+
+            ph_nonzero_sequence = PH_ID[irow][np.nonzero(PH_ID[irow])]
+            number_of_ph_zeros = len(PH_ID[irow]) - len(ph_nonzero_sequence)
+            # if number of values == 0 in PH_ID[irow] is 0, then max number of detections reached: some photons may be not registered in PH_ID
+            if number_of_ph_zeros == 0:
+                print(f"*** WARNING: maximum number of photons reached in row {irow}: some photons may have not been registered in PH_ID")
+
+            # if number of values != 0 in PH_ID[irow] is 1, then it is a single photon
+            if len(ph_nonzero_sequence) == 1:
+                # single photon
+                ph_id_irow = PH_ID[irow][0]
+            else:
+                # more than one photon in the record: check corresponding time in impact file
+                min_time_diff = float('inf')
+                for ph_id in ph_nonzero_sequence:
+                    # get the time of the photon in the impact file: same PH_ID and same PIXEL
+                    time_ph_piximpact = time_imp[ph_id_imp == ph_id and pixel_imp == pixel_irow]
+                    time_diff = abs(time_ph_piximpact-time_irow)
+                    if time_diff < min_time_diff:
+                        min_time_diff = time_diff
+                        ph_id_irow = ph_id
+            
+            # save the SIRENA information for the event
+            sirena_info[irow] = {
+                'SIGNAL': signal_irow, 'TIME': time_irow, 
+                'ELOWRES': elowres_irow, 'AVG4SD': avg4sd_irow,
+                'GRADE1': grade1_irow, 'GRADE2': grade2_irow, 
+                'PH_ID': ph_id_irow, 'PIXEL': pixel_irow}
     return sirena_info
