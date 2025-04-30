@@ -33,10 +33,10 @@ def time_to_observe_n_pairs(count_rate, pairs_separation, npairs):
         two consecutive events is less than (d) is:
              P(T < d) = 1 - exp(-ctr * d)
 
-        1.2 Calculate the expected number of pairs: Having a time interval (T) and an event rate (\lambda), 
-        the expected number of events in that interval is (\lambda T). 
+        1.2 Calculate the expected number of pairs: Having a time interval (T) and an event rate (\\lambda), 
+        the expected number of events in that interval is (\\lambda T). 
         Each pair of consecutive events can be considered a potential pair. 
-        Therefore, the expected number of pairs is approximately (\lambda T - 1) 
+        Therefore, the expected number of pairs is approximately (\\lambda T - 1) 
         (since the first event has no previous event with which to form a pair).
 
         1.3 Multiply by the probability of a pair: The expected number of pairs where the distance between 
@@ -207,28 +207,31 @@ def get_sirena_info(sirena_file, impact_file):
         for all the reconstructed photons.
     """
 
-    # open the impact file
-    with fits.open(impact_file) as hdul_impact:
-        data_impact = hdul_impact[1].data
-        # get the PROBABLE PH_ID and arrival time
-        ph_id_imp = data_impact['PH_ID'].copy()
-        time_imp = data_impact['TIME'].copy()
-
     # open the SIRENA file
     with fits.open(sirena_file) as hdul:
         nrecons = hdul[1].header['NAXIS2']
-        #initialize a list of dictionaries to store the SIRENA information
-        sirena_info = [{} for _ in range(nrecons)]
+        # create a structure to store the SIRENA information
+        sirena_info = {"TIME": [], "SIGNAL": [], "ELOWRES": [], "AVG4SD": [], "GRADE1": [], "GRADE2": [], "PROBPHID": []}
+        
         # read the data and store
         data = hdul[1].data
-        PH_ID = data['PH_ID'].copy()
-        TIME = data['TIME'].copy()
-        SIGNAL = data['SIGNAL'].copy()
-        ELOWRES = data['ELOWRES'].copy()
-        AVG4SD = data['AVG4SD'].copy()
-        GRADE1 = data['GRADE1'].copy()
-        GRADE2 = data['GRADE2'].copy()
-    
+        PH_ID = data['PH_ID']
+        TIME = data['TIME']
+        SIGNAL = data['SIGNAL']
+        ELOWRES = data['ELOWRES']
+        AVG4SD = data['AVG4SD']
+        GRADE1 = data['GRADE1']
+        GRADE2 = data['GRADE2']
+        # check if the column PROBPHID exists in the SIRENA file
+        colPROBPHID = 'PROBPHID' in data.columns.names
+        if not colPROBPHID:
+            # open the impact file
+            with fits.open(impact_file) as hdul_impact:
+                data_impact = hdul_impact[1].data
+                # get the PROBABLE PH_ID and arrival time
+                ph_id_imp = data_impact['PH_ID'].copy()
+                time_imp = data_impact['TIME'].copy()
+                
         for irow in range(len(SIGNAL)):
             time_irow = TIME[irow]
             signal_irow = SIGNAL[irow]
@@ -237,35 +240,93 @@ def get_sirena_info(sirena_file, impact_file):
             grade1_irow = GRADE1[irow]
             grade2_irow = GRADE2[irow]
 
-            ph_nonzero_sequence = PH_ID[irow][np.nonzero(PH_ID[irow])]
-            number_of_ph_zeros = len(PH_ID[irow]) - len(ph_nonzero_sequence)
-            # if number of values == 0 in PH_ID[irow] is 0, then max number of detections reached: some photons may be not registered in PH_ID
-            if number_of_ph_zeros == 0:
-                print(f"*** WARNING: maximum number of photons reached in row {irow}: some photons may have not been registered in PH_ID")
+            # get possible IDs of the photons in the record if PROBPHID is not present
+            # check if column PROBPHID exists in the SIRENA file
+            # check if the column exists
+            if not colPROBPHID:
+                ph_nonzero_sequence = PH_ID[irow][np.nonzero(PH_ID[irow])]
+                number_of_ph_zeros = len(PH_ID[irow]) - len(ph_nonzero_sequence)
+                # if number of values == 0 in PH_ID[irow] is 0, then max number of detections reached: some photons may be not registered in PH_ID
+                if number_of_ph_zeros == 0:
+                    print(f"*** WARNING: maximum number of photons reached in row {irow}: some photons may have not been registered in PH_ID")
 
-            # if number of values != 0 in PH_ID[irow] is 1, then it is a single photon
-            if len(ph_nonzero_sequence) == 1:
-                # single photon
-                ph_id_irow = PH_ID[irow][0]
+                # if number of values != 0 in PH_ID[irow] is 1, then it is a single photon
+                if len(ph_nonzero_sequence) == 1:
+                    # single photon
+                    ph_id_irow = PH_ID[irow][0]
+                else:
+                    # more than one photon in the record: check corresponding time in impact file
+                    min_time_diff = float('inf')
+                    for ph_id in ph_nonzero_sequence:
+                        # get the time of the photon in the impact file: same PH_ID 
+                        index_match = np.where((ph_id_imp == ph_id))
+                        # check if there is a match
+                        if len(index_match[0]) == 0:
+                            raise ValueError(f"PH_ID {ph_id} not found in impact file")
+                        time_ph_piximpact = time_imp[index_match]
+                        time_diff = abs(time_ph_piximpact-time_irow)
+                        if time_diff < min_time_diff:
+                            min_time_diff = time_diff
+                            ph_id_irow = ph_id
             else:
-                # more than one photon in the record: check corresponding time in impact file
-                min_time_diff = float('inf')
-                for ph_id in ph_nonzero_sequence:
-                    # get the time of the photon in the impact file: same PH_ID 
-                    index_match = np.where((ph_id_imp == ph_id))
-                    # check if there is a match
-                    if len(index_match[0]) == 0:
-                        raise ValueError(f"PH_ID {ph_id} not found in impact file")
-                    time_ph_piximpact = time_imp[index_match]
-                    time_diff = abs(time_ph_piximpact-time_irow)
-                    if time_diff < min_time_diff:
-                        min_time_diff = time_diff
-                        ph_id_irow = ph_id
-            
+                ph_id_irow = data['PROBPHID'][irow]
+                # check if the PROBPHID is not zero
+                if ph_id_irow == 0:
+                   raise ValueError(f"PROBPHID is zero in row {irow}: no photon found") 
             # save the SIRENA information for the event
-            sirena_info[irow] = {
-                'SIGNAL': signal_irow, 'TIME': time_irow, 
-                'ELOWRES': elowres_irow, 'AVG4SD': avg4sd_irow,
-                'GRADE1': grade1_irow, 'GRADE2': grade2_irow, 
-                'PROBPHID': ph_id_irow}
+            sirena_info['TIME'].append(time_irow)
+            sirena_info['SIGNAL'].append(signal_irow)
+            sirena_info['ELOWRES'].append(elowres_irow)
+            sirena_info['AVG4SD'].append(avg4sd_irow)
+            sirena_info['GRADE1'].append(grade1_irow)
+            sirena_info['GRADE2'].append(grade2_irow)
+            sirena_info['PROBPHID'].append(ph_id_irow)
+
     return sirena_info
+
+def get_missing_for_bad_recons(phid_bad_recons, possible_phids_missing, impact_file):
+    """
+    Get the missing photons for the bad reconstruction photon.
+
+    Parameters:
+        phid_bad_recons (int): PH_ID of the bad reconstructed photon.
+        possible_phids_missing (list of int): List of possible IDs of the missing photons.
+        impact_file (str): The path to the impact file to be read.
+        
+    Returns:
+        int: PH_ID of the missing photon
+    """
+    
+    # open the impact file
+    with fits.open(impact_file) as hdul_impact:
+        data_impact = hdul_impact[1].data
+        # get the PROBABLE PH_ID and arrival time
+        ph_id_imp = data_impact['PH_ID'].copy()
+        time_imp = data_impact['TIME'].copy()
+
+    # get the time of the bad reconstruction photon in the impact file: same PH_ID
+    index_match = np.where((ph_id_imp == phid_bad_recons))
+    # check if there is a match
+    if len(index_match[0]) == 0:
+        raise ValueError(f"PH_ID {phid_bad_recons} not found in impact file")
+    time_imp_id_bad_recons = time_imp[index_match]
+    
+    min_time_diff = float('inf')
+    ph_id_missing = 0
+    # get the missing photon for the bad reconstruction photon (closest in time)
+    for id_missing in possible_phids_missing:
+        # get the time of the missing photon in the impact file: same PH_ID
+        index_match = np.where((ph_id_imp == id_missing))
+        # check if there is a match
+        if len(index_match[0]) == 0:
+            raise ValueError(f"PH_ID {id_missing} not found in impact file")
+        time_imp_id_missing = time_imp[index_match]
+        # get the time difference
+        time_diff = abs(time_imp_id_missing - time_imp_id_bad_recons)
+        # check if it is the minimum time difference
+        if time_diff < min_time_diff:
+            min_time_diff = time_diff
+            ph_id_missing = id_missing
+    return ph_id_missing
+        
+        
