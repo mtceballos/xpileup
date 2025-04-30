@@ -11,3 +11,5 @@ __pycache__/
 slurm*err
 slurm*out
 .~lock*
+*.log
+*.tar.gz
