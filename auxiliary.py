@@ -4,6 +4,7 @@ import glob
 from subprocess import run, PIPE, STDOUT
 
 from astropy.io import fits
+from astropy.table import Table
 
 import numpy as np
 import numpy.polynomial.polynomial as poly
@@ -329,4 +330,81 @@ def get_missing_for_bad_recons(phid_bad_recons, possible_phids_missing, impact_f
             ph_id_missing = id_missing
     return ph_id_missing
         
+def get_sirena_fake_events(sirena_file=""):
+    """
+    Get the SIRENA information for all the fake events
+          
+    Parameters:
+        sirena_file (str): The path to the SIRENA file to be read.
         
+    Returns:
+        Astropy Table: table containing the SIRENA information (TIME, SIGNAL, SIRENA_ROW, CLOSE_PHID)
+        for all the fake events.
+        The Table contains the following columns:
+        - TIME: Time of the event
+        - SIGNAL: Signal of the event
+        - SIRENA_ROW: Row number of the event in the SIRENA file
+        - CLOSE_PHID: PH_ID of the closest simulated photon (from the PH_ID column)
+    """
+    import pandas as pd
+    from astropy.table import Table
+    # open the SIRENA file
+    with fits.open(sirena_file) as hdul:
+        nrecons = hdul[1].header['NAXIS2']
+        # get the data from the SIRENA file
+        data = hdul[1].data 
+
+        # check if there is a PROBPHID column
+        if 'PROBPHID' in hdul[1].data.columns.names:
+            PROBPHID = data['PROBPHID']
+            # get number of unique PH_IDs in PROBPHID
+            unique_phids = np.unique(PROBPHID)
+            if nrecons > len(unique_phids): #fake pulses
+                # get the TIME and SIGNAL columns
+                TIME = data['TIME']
+                SIGNAL = data['SIGNAL']
+                # identify the duplicated values in PROBPHID column
+                duplicated_phids = [phid for phid in unique_phids if np.sum(PROBPHID == phid) > 1]
+                # identify the PROBPHID rows where the PH_ID is duplicated
+                duplicated_rows = [irow for irow in range(nrecons) if PROBPHID[irow] in duplicated_phids]
+                # create an astropy table to store the SIRENA information
+                sirena_info = Table(names=('SIRENA_ROW', 'PHID', 'TIME', 'SIGNAL'), 
+                                    dtype=('i4', 'i4', 'f8', 'f8'))
+                for irow in duplicated_rows: 
+                    time_irow = TIME[irow]
+                    signal_irow = SIGNAL[irow]
+                    sirena_info.add_row([irow+1, PROBPHID[irow], time_irow, signal_irow])
+        else:
+            # create an astropy table to store the SIRENA information
+            sirena_info = Table(names=('SIRENA_ROW', 'PHID', 'TIME', 'SIGNAL'), 
+                                dtype=('i4', 'i4', 'f8', 'f8'))
+            # get the PH_ID column
+            PH_ID = data['PH_ID']
+            # get the non-zero values in PH_ID
+            ph_nonzero_sequence = PH_ID[np.nonzero(PH_ID)]
+            if len(ph_nonzero_sequence) == len(PH_ID): # all values are non-zero
+                raise ValueError("All values in PH_ID are non-zero: maximum number of photons stored - check xifusim file")
+            # get the unique values in ph_nonzero_sequence
+            unique_phids = np.unique(ph_nonzero_sequence)
+            nunique_phids = len(unique_phids)
+
+            if nrecons > nunique_phids: #fake pulses
+                # get the TIME and SIGNAL columns
+                TIME = data['TIME']
+                SIGNAL = data['SIGNAL']
+                # get the rows where PH_ID is identical
+                _, idx, counts = np.unique(PH_ID, axis=0, return_index=True, return_counts=True)
+                same_PHID_rows = [np.where((PH_ID == PH_ID[i]).all(axis=1))[0] for i in idx[counts > 1]]
+                for group in same_PHID_rows:
+                    ph_nonzero_sequence = PH_ID[group[0]][np.nonzero(PH_ID[group[0]])]
+                    if len(ph_nonzero_sequence) < len(group): # fake pulses in the group
+                        # add the rows to the table
+                        for irow in group:
+                            time_irow = TIME[irow]
+                            signal_irow = SIGNAL[irow]
+                            phid = PH_ID[irow]
+                            # add the row to the table
+                            sirena_info.add_row([irow+1, ph_nonzero_sequence, time_irow, signal_irow])
+    #print(sirena_info)
+    return sirena_info
+    
