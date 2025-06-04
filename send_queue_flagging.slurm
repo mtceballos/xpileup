@@ -28,20 +28,20 @@ echo "Using Flux: $flux"
 
 filter="nofilt"
 focus="defoc"
+config="v5_20250621"
 
 if [ 1 -eq "$(echo "$flux < 1." | bc)" ]
 then
     focus="infoc"
 fi
 
-if [ $flux -gt 999 ]
-then
+if (( $(echo "$flux > 999" |bc -l) )); then
     filter="thickBe"
 fi
 
 echo "Runing: python3 ./execute_flagging.py --focus=$focus --filter=$filter --flux_mcrab=$flux"
 
-python3 ./execute_flagging.py --focus=$focus --filter=$filter --flux_mcrab=$flux
+python3 ./execute_flagging.py --focus=$focus --filter=$filter --flux_mcrab=$flux --config_version=$config
 
 
 

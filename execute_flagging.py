@@ -22,6 +22,8 @@ if __name__ == "__main__":
                         help="Filter used in source file simulations")
     parser.add_argument('--focus', required=False, default="infoc", choices=['infoc','defoc'],
                         help="Focus option in simulations")
+    parser.add_argument('--config_version', required=False, default="v5_20250621", choices=['v3_20240917','v5_20250621'],
+                        help="xifusim configuration file version")
     parser.add_argument('--secondary_samples', required=False, default="1563", type=int,
                         help="Number of samples to previous pulse for a secondary classification")
     parser.add_argument('--nsigmas', required=False, default=5, type=float,
@@ -39,6 +41,7 @@ if __name__ == "__main__":
     flux_mcrab=args.flux_mcrab
     filter=args.filter
     focus=args.focus
+    config=args.config_version
     secondary_samples=args.secondary_samples
     nsigmas=args.nsigmas
     poly_order=args.poly_order
@@ -57,7 +60,8 @@ if __name__ == "__main__":
         model = model,
         flux_mcrab = flux_mcrab,
         filter = filter,
-        focus = focus)
+        focus = focus,
+        config_version = config)
     
     print(f"Running jupyter-notebook for flagging with {params_dict}")
     pm.execute_notebook(

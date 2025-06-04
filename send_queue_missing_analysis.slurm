@@ -20,7 +20,7 @@ csvs=('info_nofilt_infoc_global_0.320mCrab.csv' \
 	  'info_thickBe_defoc_global_1000.000mCrab.csv')
 
 echo "Using ${csvs[$icpu]}"
-python3 ./execute_missing_analysis.py --csv=${csvs[$icpu]} --verbose=0
+python3 ./execute_missing_analysis.py --csv=${csvs[$icpu]} --verbose=1
 
 
 
