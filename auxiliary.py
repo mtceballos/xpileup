@@ -9,6 +9,14 @@ from astropy.table import Table
 import numpy as np
 import numpy.polynomial.polynomial as poly
 
+# detect whether running in Jupyter Notebook or as a script
+def is_notebook():
+    try:
+        from IPython import get_ipython
+        shell = get_ipython().__class__.__name__
+        return shell == 'ZMQInteractiveShell'
+    except (NameError, ImportError):
+        return False
 
 verbose = 1
 def vprint(*args, **kwargs):
@@ -407,4 +415,49 @@ def get_sirena_fake_events(sirena_file=""):
                             sirena_info.add_row([irow+1, ph_nonzero_sequence, time_irow, signal_irow])
     #print(sirena_info)
     return sirena_info
+    
+
+def create_fits_cube(data_table, data_cube_file=''):
+    """
+    Create a FITS file with the data in a cube format.
+    The cube will have dimensions: separation, energy1, energy2 and the number of detected events.
+
+    Parameters:
+    data_table : astropy Table
+        The data containing separation, energy1, energy2, and ndetected.
+    data_cube: numpy array (3D)
+        The data cube containing the number of detected events for each combination of separation and energies.
+    """
+    # create a FITS file with the filtered data in a cube: separation, energy1, energy2 and the number of detected events
+    separations = np.unique(data_table['separation'])
+    energies1 = np.unique(data_table['energy1'])
+    energies2 = np.unique(data_table['energy2'])
+    
+    # for FITS: NAXIS1=ENERGY1, NAXIS2=ENERGY2, NAXIS3=SEPARATION  ### CAREFUL #####
+    # for NUMPY: axis0=SEPARATION, axis1=ENERGY2, axis2=ENERGY1
+    cube_shape = (len(separations), len(energies2), len(energies1))
+    data_cube = np.zeros(cube_shape, dtype=int)
+    # fill the cube with the number of detected events
+    for i, sep in enumerate(separations):
+        for j, e2 in enumerate(energies2):
+            for k, e1 in enumerate(energies1):
+                # get the number of detected events for this separation and energies
+                ndetected = data_table[(data_table['separation'] == sep) & (data_table['energy1'] == e1) & (data_table['energy2'] == e2)]['ndetected']
+                if len(ndetected) > 0:
+                    data_cube[i, j, k] = ndetected[0]
+    # if data cube file is provided, create the FITS file
+    if data_cube_file:
+        # create a FITS file with the data cube
+        hdu = fits.PrimaryHDU(data_cube)
+        hdu.header['SEPS'] = ', '.join(map(str, separations))
+        hdu.header['ENERGY1'] = ', '.join(map(str, energies1))
+        hdu.header['ENERGY2'] = ', '.join(map(str, energies2))
+        # set units for the axes: samples, keV, keV
+        hdu.header['CUNIT3'] = 'samples'
+        hdu.header['CUNIT2'] = 'keV'
+        hdu.header['CUNIT1'] = 'keV'
+        # save the FITS file
+        hdu.writeto(data_cube_file, overwrite=True)
+        print(f"Data cube saved to {data_cube_file}")
+    return data_cube 
     
