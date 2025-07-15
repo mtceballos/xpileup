@@ -27,7 +27,7 @@ config_version="v5_20250621"
 #    Use --arg value for flags that take multiple values.
 #    Use --arg=value only when the value is a single item (like a string or number).
 
-echo "Runing: python3 ./create_cubes.py --windows ${windows[@]} --offsets ${offsets[@]} --threshold=$threshold --samplesUp=$samplesUp --samplesDown=$samplesDown --config_version=$config_version --create_cubes=$create_cubes"
+echo "Runing: python3 ./execute_create_cubes.py --windows ${windows[@]} --offsets ${offsets[@]} --threshold=$threshold --samplesUp=$samplesUp --samplesDown=$samplesDown --config_version=$config_version --create_cubes=$create_cubes"
 
-python3 ./create_cubes.py --windows "${windows[@]}" --offsets "${offsets[@]}" --threshold=$threshold --samplesUp=$samplesUp --samplesDown=$samplesDown --config_version=$config_version --relevant_separations "${relevant_separations[@]}" --sep_for_plot_mosaic=$sep_plot # --create_cubes
+python3 ./execute_create_cubes.py --windows "${windows[@]}" --offsets "${offsets[@]}" --threshold=$threshold --samplesUp=$samplesUp --samplesDown=$samplesDown --config_version=$config_version --relevant_separations "${relevant_separations[@]}" --sep_for_plot_mosaic=$sep_plot # --create_cubes
 

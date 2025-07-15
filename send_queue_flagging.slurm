@@ -39,9 +39,9 @@ if (( $(echo "$flux > 999" |bc -l) )); then
     filter="thickBe"
 fi
 
-echo "Runing: python3 ./execute_flagging.py --focus=$focus --filter=$filter --flux_mcrab=$flux"
+echo "Runing: python3 ./execute_flag_multipulse.py --focus=$focus --filter=$filter --flux_mcrab=$flux"
 
-python3 ./execute_flagging.py --focus=$focus --filter=$filter --flux_mcrab=$flux --config_version=$config
+python3 ./execute_flag_multipulse.py --focus=$focus --filter=$filter --flux_mcrab=$flux --config_version=$config
 
 
 
