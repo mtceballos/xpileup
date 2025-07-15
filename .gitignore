@@ -15,3 +15,9 @@ slurm*out
 *.tar.gz
 *.glu
 *_play.ipynb
+*_v0.*
+*.ps
+*.gif
+*.png
+v3_*/
+v5_*/
