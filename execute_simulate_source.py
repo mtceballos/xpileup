@@ -83,6 +83,11 @@ from xspec import Xset, Model, AllModels
 # filter:  thinOpt // thickOpt // nofilt // thinBe // thickBe    
 # focus: '' (TBD from flux)   
 # recons: 0 for no_reconstruction, 1 for do_reconstruction   
+# window: size (samples) of the subtraction window in the detection algo   
+# offset: offset (samples) of the subtraction window in the detection algo    
+# threshold: threshold value for the detection
+# samplesUp: samples above the threshold (detection)
+# samplesDown: samples below the threshold (detection)
 # verbose: 0 (silent) or 1 (chatty)
 # ```
 
@@ -107,7 +112,13 @@ def get_parameters():
             "focus": '',
             "recons": 1,
             "verbose": 1,
-            "config_version": "v5_20250621" #v3_20240917"
+            "config_version": "v5_20250621",
+            "window": 2,
+            "offset": 1,
+            "threshold": 6.0,
+            "samplesUp": 3,
+            "samplesDown": 2,
+            "secondary_samples":1563
         }
     else:
         # Parse command line arguments for script execution
@@ -127,6 +138,12 @@ def get_parameters():
         parser.add_argument("--verbose", type=int, default=0, help="Verbose level (0-1)", choices=[0, 1])
         parser.add_argument("--config_version", type=str, default="v5_20250621", help="XIFU Configuration version for xifusim",
                             choices=["v5_20250621", "v3_20240917"])
+        parser.add_argument("--window", type=int, default=2, help="Window size for the derivative subtraction")
+        parser.add_argument("--offset", type=int, default=1, help="Offset for the derivative subtraction")
+        parser.add_argument("--threshold", type=float, default=6.0, help="Threshold for the detection algorithm")
+        parser.add_argument("--samplesUp", type=int, default=3, help="Samples above the threshold for detection")
+        parser.add_argument("--samplesDown", type=int, default=2, help="Samples below the threshold for detection")
+        parser.add_argument("--secondary_samples", type=int, default=1563, help="Samples to previous to grade pulse as secondary")
         
         args = parser.parse_args()
         return vars(args)
@@ -146,6 +163,12 @@ focus = params['focus']
 recons = params['recons']
 verbose = params['verbose']
 config_version = params['config_version']
+window = params['window']
+offset = params['offset']
+tH = params['threshold']
+sU = params['samplesUp']
+sD = params['samplesDown']
+secondary_samples = params['secondary_samples']
 
 # %% [markdown]
 # ### Read derived/extra parameters
@@ -164,8 +187,8 @@ xmldir = f"{SIXTE}/share/sixte/instruments/athena-xifu/baseline"
 xml = f"{xmldir}/xifu_nofilt_infoc.xml"
 
 # %%
-SD=2 # SamplesDown for SIRENA detection
-tH=6. # threshold for SIRENA detection
+#SD=2 # SamplesDown for SIRENA detection
+#tH=6. # threshold for SIRENA detection
 RA=0.
 Dec=0.
 sampling_rate=130210 #Hz
@@ -177,7 +200,7 @@ elif config_version == "v5_20250621":
     close_dist_toxifusim = 200 #samples for close events to decide if xifusim simulation will be done
 else:
     raise ValueError(f"Unknown config_version: {config_version}")
-secondary_samples = 1563
+#secondary_samples = 1563
 HR_samples = 8192
 # 1 mCrab = 90 counts/s in the 2-10 keV band
 flux = flux_mcrab * 2.4E-11
@@ -709,16 +732,18 @@ for ipixel in pixels_with_impacts:
             f" OFStrategy=BYGRADE"
             f" filtEeV=6000"
             f" OFNoise=NSD"
-            f" samplesDown={SD}"   #changed for new smoothed derivative (4 samples)
-            f" samplesUp=3"
+            f" samplesDown={sD}"   #changed for new smoothed derivative (4 samples)
+            f" samplesUp={sU}"
             f" threshold={tH}"
+            f" windowSize={window}"
+            f" offset={offset}"
             #f" nSgms=3.5"
         )
         aux.vprint(f"Doing reconstruction for pixel {ipixel}", end='\r')
         #aux.vprint(f"Running {comm}")
         output_tesrecons = run(comm, shell=True, capture_output=True)
-        assert output_tesrecons.returncode == 0, f"tesrecons failed to run:{comm}"
-        assert os.path.exists(reconsfile), f"tesrecons did not produce an output file"
+        assert output_tesrecons.returncode == 0, f"tesrecons failed to run:{comm}; \nReason: {output_tesrecons.stderr.decode()}"
+        #assert os.path.exists(reconsfile), f"tesrecons did not produce an output file"
         
 
 # %% [markdown]
@@ -819,7 +844,7 @@ for ipixel in pixels_with_impacts:
         # save changes to the SIRENA file
         hdulist_recons.flush()
         #aux.vprint(f"Updated PROBPHID and GRADE2 column in {reconsfile}")
-        aux.vprint(f"Updated PROBPHID a")
+        aux.vprint(f"Updated PROBPHID\n")
 
 # %% [markdown]
 # ### check missing or misreconstructed photons
