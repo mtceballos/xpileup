@@ -24,7 +24,7 @@
 # ```python
 #     Eprimary = [0.2, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9 , 10, 11 ,12]    
 #     Esecondary = [0.2, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9 , 10, 11 ,12]    
-#     Separations = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,25,30,35,40,45,50,60,70,80,90,100,126]    
+#     Separations = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,25,30,35,40,45,50,60,70,80,90,100,110,126]    
 # ```
 # 2) (*external*) SIRENA reconstructed (xifusim) files using combinations of window and offset:    
 # ```python
@@ -115,18 +115,19 @@ def get_parameters():
             "threshold": 6.0, # threshold for detection
             "samplesUp": 3,  # samples up for detection
             "samplesDown": 2, # samples down for detection
-            "windows": [0, 1, 2, 3, 4, 5, 10, 15, 20], # subtraction derivative window for detection
-            "offsets": [0, 1, 2, 3, 4, 5],  # offset for subtraction window
-            "relevant_separations": [8, 20, 50, 126, 317, 797], # relevant separations for the analysis
+            "windows": [0,1, 2, 3, 4, 5, 6, 10, 15, 20], # subtraction derivative window for detection
+            "offsets": [0,1, 2, 3, 4, 5, 6],  # offset for subtraction window
+            "relevant_separations": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,25,30,35,40,45,50,60,70,80,90,100,110,126], # relevant separations for the analysis
             "config_version": 'v5_20250621',  # XIFU configuration
             "create_cubes": False,  # flag to create cubes
-            "sep_for_plot_mosaic": 797 # samples separation for plotting the mosaic of slices of the data cube (if negative, no plotting)
+            "sep_for_plot_mosaic": 20, # samples separation for plotting the mosaic of slices of the data cube (if negative, no plotting)
+            "windows_for_collapsed_cube": [0,1,2,3,4,5,6] # window sizes for the collapsed cube
         }
     else:
         # Parameters from command line (e.g., for SLURM)
         parser = argparse.ArgumentParser(
             description='Execute the python script for pairs detection analysis',
-            prog='create_cubes.py')
+            prog='execute_create_cubes.py')
         parser.add_argument('--windows', required=False, type=int,
                             nargs='*', default=[0, 1, 2, 3, 4, 5, 10, 15, 20],
                             help='Subtraction derivative window for detection')
@@ -148,6 +149,9 @@ def get_parameters():
                             help='Relevant separations for the analysis')
         parser.add_argument('--sep_for_plot_mosaic', required=False, type=int, default=-1,
                             help='Samples separation for plotting the mosaic of slices of the data cube (if negative, no plotting)')
+        parser.add_argument('--win_collapsed_cube', required=False, type=int,
+                            nargs='*', default=[0, 1, 2, 3, 4, 5, 6],
+                            help='Window sizes for the collapsed cube')
         
         args = parser.parse_args()
       
@@ -167,6 +171,7 @@ xifu_config = params['config_version']
 create_cubes = params['create_cubes']
 relevant_separations = params['relevant_separations']
 sep_for_plot_mosaic = params['sep_for_plot_mosaic']
+windows_for_collapsed_cube = params['win_collapsed_cube'] 
 
 # %% [markdown]
 # ### Secondary parameters
@@ -174,6 +179,10 @@ sep_for_plot_mosaic = params['sep_for_plot_mosaic']
 # %%
 min_detected = 100
 max_detected = 200
+pickles_dir = "/dataj6/ceballos/INSTRUMEN/EURECA/ERESOL/CEASaclay/July2025_v5_v20250621_offsetWindow/"
+old_separations = [8, 20, 50, 126]  # default meaningful separations for window=0,10,15,20
+old_windows = [0, 10, 15, 20]  # old windows for the analysis
+
 
 # %%
 # print parameters
@@ -201,8 +210,9 @@ energies2 = None  # to store unique energies2
 nrows = len(offsets)  # number of rows for the mosaic plot
 ncols = len(windows)  # number of columns for the mosaic plot
 
-# initialize a numpy array 3-D (sep, offset, window) for nlost_pulses
-nlost_pulses = np.zeros((len(relevant_separations), len(offsets), len(windows)), dtype=int)
+# initialize a numpy array 3-D (sep, offset, window) for nlost_pulses with NaN values
+nlost_pulses = np.nan * np.ones((len(relevant_separations), len(offsets), len(windows_for_collapsed_cube)), dtype=float)
+#nlost_pulses = np.zeros((len(relevant_separations), len(offsets), len(windows_for_collapsed_cube)), dtype=int)
 
 if sep_for_plot_mosaic > 0:
     sep = sep_for_plot_mosaic  # select the first separation for the mosaic
@@ -217,23 +227,40 @@ for io in range(len(offsets)):
         off = offsets[io_plot]  # use the current offset for plotting
         #off = offsets[io]  # use the current offset
         win = windows[iw]
-        #print(f"Window: {win}, Offset: {off}")
-        if win == 0: 
-            off = 0
-        pickle_file = f'analysis_pairs/detectedFakes_win{win}_off{off}.pkl'
+        #print(f"Offset: {off}, Window: {win}, io: {io}, iw: {iw}")
+        #if win == 0: # for window=0 we use offset=0
+        #    off = 0
         if win == 0 and off > 0:
-            #Skipping window {win} with offset {off} as it is not applicable.
+            # for window=0 we use offset=0
+            print(f"    Skipping window {win} with offset {off} as it is not applicable.")
             continue
+        elif win in old_windows and off > 5:
+            #Skipping window {win} with offset {off} as it is not applicable.
+            print(f"    Skipping window {win} with offset {off} as it is not applicable.")
+            continue
+        pickle_file = f'{pickles_dir}/detectedFakes_win{win}_off{off}.pkl'
+        
         # read the data from the pickle file
         with open(pickle_file, 'rb') as f:
             data = pickle.load(f)
+            #print(data)
+            if win in old_windows:
+                use_separations = old_separations
+            else:
+                use_separations = relevant_separations
             if win == 0 and off == 0:
+                  # for window=0 and offset=0 we use the default separations
                 data_table = table.Table(rows=data, names=('separation', 'energy1', 'energy2', 'samplesDown', 'samplesUp', 'threshold', 'ndetected', 'nfake'))
                 data_filtered = data_table[(data_table['threshold'] == th) & (data_table['samplesUp'] == sUp) & (data_table['samplesDown'] == sDown)]
             else:
                 data_table = table.Table(rows=data, names=('separation', 'energy1', 'energy2', 'window', 'offset', 'ndetected', 'nfake')) 
                 data_filtered = data_table.copy()
+        # get only separations that are in the relevant separations list
+        data_filtered = data_filtered[np.isin(data_filtered['separation'], use_separations)]
         #print(f"Filtered data: {data_filtered}")
+        # print separations in data_filtered
+        #print(f"Separations in data_filtered: {np.unique(data_filtered['separation'])}")
+
         if first_read:
             separations = np.unique(data_filtered['separation'])
             energies1 = np.unique(data_filtered['energy1'])
@@ -253,36 +280,40 @@ for io in range(len(offsets)):
             print(f"Filtered data with nfake > 0: {data_filtered_nfake}") 
 
         # create a data cube for each pickle file (and optionally save it to a FITS file)
-        data_cube_file=""
+        data_cube_detections_iw_io_file=""
         if create_cubes:
-            data_cube_file = f"analysis_pairs/detected_events_cube_win{win}_off{off}.fits"
-        data_cube = create_fits_cube(data_filtered, data_cube_file=data_cube_file)
-        
+            data_cube_detections_iw_io_file = f"analysis_pairs/detected_events_cube_win{win}_off{off}.fits"
+        data_cube_detections_iw_io = create_fits_cube(data_filtered, data_cube_file=data_cube_detections_iw_io_file)
+        #print(f"Data cube created with shape: {data_cube_detections_iw_io.shape} for window {win} and offset {off}")
         # store nlost pulses in the 3D array
-        for isep, sep in enumerate(relevant_separations):
-            data_slice = data_cube[isep, :, :]
+        for isep, sep in enumerate(use_separations):
+            data_slice_sep = data_cube_detections_iw_io[isep, :, :]
             # calculate the number of detected events in the slice
-            ndetected_slice = np.sum(data_slice)
+            ndetected_slice = np.sum(data_slice_sep)
             nlost_slice = ndetected_slice - nsimulated
             # use io reversed index for FITS cube so that the first offset is at the bottom of the plot
-            nlost_pulses[isep, io_plot, iw] = nlost_slice
+            if win in windows_for_collapsed_cube: 
+                nlost_pulses[isep, io_plot, iw] = nlost_slice
+                #print(f"    Window: {win}, Offset: {off}, Separation: {sep}, N. lost: {nlost_slice}, N. detected: {ndetected_slice}")
                 
 
         if sep_for_plot_mosaic > 0:
             # plot mosaic of slices of the data cube
             # --------------------------------------
-            
+            #print(f"    Plotting mosaic for io {io} and iw {iw}")
             # create a normalization for the color map
             norm = mcolors.Normalize(vmin=min_detected, vmax=max_detected)
             cmap = plt.get_cmap('viridis')
             # create a new figure for each window and offset using the slice for the separation_index
-            separation_index = np.where(separations == sep_for_plot_mosaic)[0][0]
-            data_slice = data_cube[separation_index, :, :]
+            #separation_index = np.where(separations == sep_for_plot_mosaic)[0][0]
+            separation_index = np.where(np.array(use_separations) == sep_for_plot_mosaic)[0][0]
+            data_slice_sep = data_cube_detections_iw_io[separation_index, :, :]
+            # if the separation is not in the data cube, skip this plot
             # calculate the number of detected events in the slice
-            ndetected_slice = np.sum(data_slice)
+            ndetected_slice = np.sum(data_slice_sep)
             nlost_slice = ndetected_slice - nsimulated
             
-            im = ax_mosaic[io, iw].imshow(data_slice, aspect='auto', origin='lower', cmap=cmap, norm=norm, interpolation='nearest')
+            im = ax_mosaic[io, iw].imshow(data_slice_sep, aspect='auto', origin='lower', cmap=cmap, norm=norm, interpolation='nearest')
             ax_mosaic[io, iw].set_title(f'Window: {windows[iw]}, Offset: {off}\n N. lost={nlost_slice}', fontsize=8)
             ax_mosaic[io, iw].set_xlabel('Energy primary (keV)', fontsize=8)
             ax_mosaic[io, iw].set_ylabel('Energy secondary (keV)', fontsize=8)
@@ -304,6 +335,12 @@ if sep_for_plot_mosaic > 0:
     
 
 
+# %%
+if sep_for_plot_mosaic > 0:
+    # save the mosaic figure (png and PDF)
+    fig_mosaic.savefig(f'analysis_pairs/mosaic_detected_events_cube_slices_sep{sep_for_plot_mosaic}_windows_offsets.png', dpi=300, bbox_inches='tight')
+    fig_mosaic.savefig(f'analysis_pairs/mosaic_detected_events_cube_slices_sep{sep_for_plot_mosaic}_windows_offsets.pdf', bbox_inches='tight')
+
 # %% [markdown]
 # ## Create cube of nlost_pulses
 # 
@@ -319,7 +356,7 @@ if sep_for_plot_mosaic > 0:
 hdu = fits.PrimaryHDU(nlost_pulses)
 hdu.header['SEPS'] = ', '.join(map(str, relevant_separations)) # axis3
 hdu.header['OFFSETS'] = ', '.join(map(str, offsets)) #axis2
-hdu.header['WINDOWS'] = ', '.join(map(str, windows)) # axis1
+hdu.header['WINDOWS'] = ', '.join(map(str, windows_for_collapsed_cube)) # axis1
 # set units for the axes: samples
 hdu.header['CUNIT3'] = 'samples'
 hdu.header['CUNIT2'] = 'samples'
@@ -336,8 +373,10 @@ print("nlost_pulses cube saved to nlost_pulses_cube.fits")
 # 2. Plot collapsed image   
 
 # %%
-# collase cube in axis 0 (separation) to get the mean of lost photons and plot image 
-nlost_pulses_collapsed = np.mean(nlost_pulses, axis=0)  # collapse the cube in axis 0 (separation)
+# print the shape of the nlost_pulses cube -> should be (separations, offsets, windows)
+print(f"nlost_pulses shape: {nlost_pulses.shape}")
+# collase cube in axis 0 (separation) to get the mean of lost photons and plot image (account for nans)
+nlost_pulses_collapsed = np.nanmean(nlost_pulses, axis=0)  # collapse the cube in axis 0 (separation)
 print(nlost_pulses_collapsed.shape)  # should be (offsets, windows)
 # create a new figure for the collapsed cube
 fig_collapsed, ax_collapsed = plt.subplots(figsize=(8, 6))
@@ -345,14 +384,14 @@ fig_collapsed, ax_collapsed = plt.subplots(figsize=(8, 6))
 norm_collapsed = mcolors.Normalize()
 cmap_collapsed = plt.get_cmap('viridis')
 # plot the collapsed cube
-im_collapsed = ax_collapsed.imshow(nlost_pulses_collapsed, origin='lower', cmap=cmap_collapsed, norm=norm_collapsed, interpolation='nearest')
+im_collapsed = ax_collapsed.imshow(nlost_pulses_collapsed, origin='lower', aspect='auto', cmap=cmap_collapsed, norm=norm_collapsed, interpolation='nearest')
 ax_collapsed.set_title(f'Collapsed N. lost pulses (config: {xifu_config=}, {th=}, {sUp=}, {sDown=})', fontsize=10)
 ax_collapsed.set_ylabel('Offset (samples)')
 ax_collapsed.set_xlabel('Window (samples)')
 ax_collapsed.set_yticks(np.arange(len(offsets)))
 ax_collapsed.set_yticklabels(offsets, rotation=45, fontsize=8)
-ax_collapsed.set_xticks(np.arange(len(windows)))
-ax_collapsed.set_xticklabels(windows, fontsize=8)
+ax_collapsed.set_xticks(np.arange(len(windows_for_collapsed_cube)))
+ax_collapsed.set_xticklabels(windows_for_collapsed_cube, fontsize=8)
 # add color bar to the collapsed plot
 cbar_collapsed = fig_collapsed.colorbar(plt.cm.ScalarMappable(norm=norm_collapsed, cmap=cmap_collapsed), ax=ax_collapsed, fraction=0.032, pad=0.04)
 cbar_collapsed.ax.tick_params(labelsize=8)
@@ -363,16 +402,19 @@ fig_collapsed.savefig(f'analysis_pairs/collapsed_nlost_pulses_cube_windows_offse
 fig_collapsed.savefig(f'analysis_pairs/collapsed_nlost_pulses_cube_windows_offsets.pdf', bbox_inches='tight')
 
 # %% [markdown]
-# #### Prepare for a future "main" in the python script
+# ### Some DUMB tests
 
 # %%
-"""
-if __name__ == "__main__" and not is_notebook():
-    main(**get_parameters())
-"""
+win= 4
+off = 0
+# print values of nlost_pulses for window=win, offset=off and separation=sep_for_plot_mosaic
+isep = np.where(np.array(relevant_separations) == sep_for_plot_mosaic)[0][0]  # find the index of separation=sep_for_plot_mosaic
+iw = windows_for_collapsed_cube.index(win)  # find the index of window=win
+io = np.where(np.array(offsets) == off)[0][0]  # find the index of offset=off  
 
-# %% [markdown]
-# ### Some DUMB test
+print(f"nlost_pulses_collapsed[io, iw]: {nlost_pulses_collapsed[io, iw]}")
+print(f"nlost_pulses[isep, io, iw]: {nlost_pulses[isep, io, iw]}")  # print the value for separation=20, window=6
+
 
 # %%
 """
