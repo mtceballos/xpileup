@@ -9,14 +9,6 @@ from astropy.table import Table
 import numpy as np
 import numpy.polynomial.polynomial as poly
 
-# detect whether running in Jupyter Notebook or as a script
-def is_notebook():
-    try:
-        from IPython import get_ipython
-        shell = get_ipython().__class__.__name__
-        return shell == 'ZMQInteractiveShell'
-    except (NameError, ImportError):
-        return False
 
 verbose = 1
 def vprint(*args, **kwargs):
@@ -355,7 +347,7 @@ def get_sirena_fake_events(sirena_file=""):
         - CLOSE_PHID: PH_ID of the closest simulated photon (from the PH_ID column)
     """
     import pandas as pd
-    from astropy.table import Table
+    import astropy
     # open the SIRENA file
     with fits.open(sirena_file) as hdul:
         nrecons = hdul[1].header['NAXIS2']
@@ -376,7 +368,7 @@ def get_sirena_fake_events(sirena_file=""):
                 # identify the PROBPHID rows where the PH_ID is duplicated
                 duplicated_rows = [irow for irow in range(nrecons) if PROBPHID[irow] in duplicated_phids]
                 # create an astropy table to store the SIRENA information
-                sirena_info = Table(names=('SIRENA_ROW', 'PHID', 'TIME', 'SIGNAL'), 
+                sirena_info = Table(names=('SIRENA_ROW', 'CLOSE_PHID', 'TIME', 'SIGNAL'), 
                                     dtype=('i4', 'i4', 'f8', 'f8'))
                 for irow in duplicated_rows: 
                     time_irow = TIME[irow]
@@ -384,18 +376,15 @@ def get_sirena_fake_events(sirena_file=""):
                     sirena_info.add_row([irow+1, PROBPHID[irow], time_irow, signal_irow])
         else:
             # create an astropy table to store the SIRENA information
-            sirena_info = Table(names=('SIRENA_ROW', 'PHID', 'TIME', 'SIGNAL'), 
+            sirena_info = Table(names=('SIRENA_ROW', 'CLOSE_PHID', 'TIME', 'SIGNAL'), 
                                 dtype=('i4', 'i4', 'f8', 'f8'))
             # get the PH_ID column
             PH_ID = data['PH_ID']
             # get the non-zero values in PH_ID
-            ph_nonzero_sequence = PH_ID[np.nonzero(PH_ID)]
-            if len(ph_nonzero_sequence) == len(PH_ID): # all values are non-zero
-                raise ValueError("All values in PH_ID are non-zero: maximum number of photons stored - check xifusim file")
+           
             # get the unique values in ph_nonzero_sequence
             unique_phids = np.unique(ph_nonzero_sequence)
             nunique_phids = len(unique_phids)
-
             if nrecons > nunique_phids: #fake pulses
                 # get the TIME and SIGNAL columns
                 TIME = data['TIME']
@@ -404,7 +393,7 @@ def get_sirena_fake_events(sirena_file=""):
                 _, idx, counts = np.unique(PH_ID, axis=0, return_index=True, return_counts=True)
                 same_PHID_rows = [np.where((PH_ID == PH_ID[i]).all(axis=1))[0] for i in idx[counts > 1]]
                 for group in same_PHID_rows:
-                    ph_nonzero_sequence = PH_ID[group[0]][np.nonzero(PH_ID[group[0]])]
+                    ph_nonzero_sequence = PH_ID[group[0]][np.nonzero(PH_ID[group])]
                     if len(ph_nonzero_sequence) < len(group): # fake pulses in the group
                         # add the rows to the table
                         for irow in group:
@@ -412,52 +401,30 @@ def get_sirena_fake_events(sirena_file=""):
                             signal_irow = SIGNAL[irow]
                             phid = PH_ID[irow]
                             # add the row to the table
-                            sirena_info.add_row([irow+1, ph_nonzero_sequence, time_irow, signal_irow])
-    #print(sirena_info)
-    return sirena_info
-    
+                            sirena_info.add_row([irow+1, phid, time_irow, signal_irow])
+                        
+        
+            
+            
+            # check if there are any fake events
+            if nrecons > len(PH_ID):
+                # identify the duplicated values in PH_ID column
+                duplicated_phids = [phid for phid in np.unique(PH_ID) if np.sum(PH_ID == phid) > 1]
+                # identify the PH_ID rows where the PH_ID is duplicated
+                duplicated_rows = [irow for irow in range(nrecons) if PH_ID[irow] in duplicated_phids]
+                for irow in duplicated_rows: 
+                    time_irow = TIME[irow]
+                    signal_irow = SIGNAL[irow]
+                    sirena_info.add_row([irow, PH_ID[irow], time_irow, signal_irow])
 
-def create_fits_cube(data_table, data_cube_file=''):
-    """
-    Create a FITS file with the data in a cube format.
-    The cube will have dimensions: separation, energy1, energy2 and the number of detected events.
 
-    Parameters:
-    data_table : astropy Table
-        The data containing separation, energy1, energy2, and ndetected.
-    data_cube: numpy array (3D)
-        The data cube containing the number of detected events for each combination of separation and energies.
-    """
-    # create a FITS file with the filtered data in a cube: separation, energy1, energy2 and the number of detected events
-    separations = np.unique(data_table['separation'])
-    energies1 = np.unique(data_table['energy1'])
-    energies2 = np.unique(data_table['energy2'])
-    
-    # for FITS: NAXIS1=ENERGY1, NAXIS2=ENERGY2, NAXIS3=SEPARATION  ### CAREFUL #####
-    # for NUMPY: axis0=SEPARATION, axis1=ENERGY2, axis2=ENERGY1
-    cube_shape = (len(separations), len(energies2), len(energies1))
-    data_cube = np.zeros(cube_shape, dtype=int)
-    # fill the cube with the number of detected events
-    for i, sep in enumerate(separations):
-        for j, e2 in enumerate(energies2):
-            for k, e1 in enumerate(energies1):
-                # get the number of detected events for this separation and energies
-                ndetected = data_table[(data_table['separation'] == sep) & (data_table['energy1'] == e1) & (data_table['energy2'] == e2)]['ndetected']
-                if len(ndetected) > 0:
-                    data_cube[i, j, k] = ndetected[0]
-    # if data cube file is provided, create the FITS file
-    if data_cube_file:
-        # create a FITS file with the data cube
-        hdu = fits.PrimaryHDU(data_cube)
-        hdu.header['SEPS'] = ', '.join(map(str, separations))
-        hdu.header['ENERGY1'] = ', '.join(map(str, energies1))
-        hdu.header['ENERGY2'] = ', '.join(map(str, energies2))
-        # set units for the axes: samples, keV, keV
-        hdu.header['CUNIT3'] = 'samples'
-        hdu.header['CUNIT2'] = 'keV'
-        hdu.header['CUNIT1'] = 'keV'
-        # save the FITS file
-        hdu.writeto(data_cube_file, overwrite=True)
-        print(f"Data cube saved to {data_cube_file}")
-    return data_cube 
-    
+
+# detect whether running in Jupyter Notebook or as a script
+def is_notebook():
+    try:
+        from IPython import get_ipython
+        shell = get_ipython().__class__.__name__
+        return shell == 'ZMQInteractiveShell'
+    except (NameError, ImportError):
+        return False
+
