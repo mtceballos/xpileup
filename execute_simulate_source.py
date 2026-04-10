@@ -103,8 +103,8 @@ def get_parameters():
         # Default parameters for interactive use
         print("Running in notebook mode for source simulation")
         return {
-            "sim_number": 1,
-            "flux_mcrab": 0.32,
+            "sim_number": 77,
+            "flux_mcrab": 31.6,
             "Emin": 2.,
             "Emax": 10.,
             "model": "crab",
@@ -161,7 +161,7 @@ model = params['model']
 filter = params['filter']
 focus = params['focus']
 recons = params['recons']
-verbose = params['verbose']
+aux.verbose = params['verbose']
 config_version = params['config_version']
 window = params['window']
 offset = params['offset']
@@ -169,6 +169,7 @@ tH = params['threshold']
 sU = params['samplesUp']
 sD = params['samplesDown']
 secondary_samples = params['secondary_samples']
+print(params)
 
 # %% [markdown]
 # ### Read derived/extra parameters
@@ -699,29 +700,15 @@ for ipixel in pixels_with_impacts:
     xifusimfile = f"{filestring}_pixel{ipixel}_xifusim.fits"
     reconsfile = f"{filestring}_pixel{ipixel}_sirena.fits"
     if reconsfile in existing_reconsfiles:
-    #if os.path.exists(reconsfile):
-        # check that all PH_ID rows have at least one zero element 
-        # (previos versions of SIRENA had a limitation of 3 values even if there were more detections)
-        # if not, run again
-        with fits.open(reconsfile) as hdulist_recons:
-            reconsdata = hdulist_recons[1].data.copy()
-        # check if all PH_ID rows have at least one zero element
-        # get PH_ID values from the reconsdata
-        phid_recons = reconsdata['PH_ID']
-        # get the number of unique PH_ID values
-        unique_phid_recons = np.unique(phid_recons)
-        # check if a '0' is present in the PH_ID values
-        # if not, run again
-        if 0 not in unique_phid_recons:
-            aux.vprint(f"Reconstruction file {reconsfile} does not have a zero PH_ID: possibly not listing all detections")
-            aux.vprint(f"Reconstruction file {reconsfile} will be removed")
-            # remove the file
+        # if reconsfile has size 0, remove it
+        if os.path.getsize(reconsfile) == 0:
             os.remove(reconsfile)
+            # update the list of existing reconsfiles
+            existing_reconsfiles.remove(reconsfile)
         else:
             aux.vprint(f"Reconstruction file {reconsfile} already exists: skipping reconstruction")
             continue
     
-    #if not os.path.exists(reconsfile):
     if reconsfile not in existing_reconsfiles:
         comm = (f"tesrecons Recordfile={xifusimfile} "
             f" TesEventFile={reconsfile}"
@@ -886,7 +873,7 @@ nnon_recons_total = 0
 
 
 for ipixel in pixels_with_impacts:
-    #if not ipixel == 776:
+    #if not ipixel == 68:
     #    continue
     # if pixel was skipped in xifusim (1 impact or separated impacts)
     if ipixel in skipped_xifusim:
@@ -958,6 +945,11 @@ for ipixel in pixels_with_impacts:
             else:
                 # check which photons in record are not reconstructed
                 ph_full_sequence_sirena = PH_ID[irow][np.nonzero(PH_ID[irow])]
+                # if whole sequence of 0s, raise an error
+                if nzeros_in_sirena_record == len(PH_ID[irow]):
+                    aux.vprint(f"    SIRENA: Warning: whole sequence of 0s in row {irow+1} of {reconsfile}: no photons reconstructed")
+                    raise ValueError(f"Error: whole sequence of 0s in row {irow+1} of {reconsfile}: no photons reconstructed")
+
                 #if nzeros_in_sirena_record == 0:
                 #    # save message in log_file
                 #    with open(log_file, "a") as f:
@@ -1082,7 +1074,7 @@ for ipixel in pixels_with_impacts:
     nnon_recons_total += nnon_recons_inpix[ipixel]       
     nimpacts_total += nimpacts_inpix[ipixel]
 
-    if verbose > 0:
+    if aux.verbose > 0:
         print(f"Summary for Pixel {ipixel}: ")
         print(f"=====================================")
         print(f"      {nimpacts_inpix[ipixel]} impacts")
@@ -1156,7 +1148,7 @@ aux.vprint(f"      Fraction of bad reconstructed photons: {fraction_badrecons:.2
 
 # %%
 #global info
-infofile = f"info_{filter}_{focus}_global_{flux_mcrab:.3f}mCrab.csv"
+infofile = f"{config_version}/info_{filter}_{focus}_global_{flux_mcrab:.3f}mCrab.csv"
 
 if not os.path.exists(infofile):
     with open(infofile, 'w') as f:

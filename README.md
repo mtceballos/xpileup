@@ -57,3 +57,12 @@ Edoardo has produced a new configuration file for xifusim simulations (v5_202506
 He confirms that the previous one (with fatser pulses) can be wrong (v3_20240917).
 Simulations done so far have been moved to folder: v3_20240917 (including previous_singles_simulations)
 A new folder has been created to store new simulations. As pulses are now slower, we simulate now couples separated by 200 samples (instead of 100 samples as before). Other parameters (apart from the configuration file) are kept the same.
+
+# July 2025
+New detection method with window and offset. SIRENA is run again with window=2, offset=1
+
+# december 2025
+SIRENA reconstructions repeated to solve Tstart assignation when Lags (parabola) applied; correct GRADING assignation of secondaries; fix HR reconstruction of secondaries
+
+# April 2026
+rerun all sirena files and all the *analysis* (not simulations). For the plots I've modified the sampling rate to 130208.3 which is the correct. It is only kept as 130210 in the simulate_source.ipynb so as not to mess around with photons selected for simulation or with exposure times.

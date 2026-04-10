@@ -26,6 +26,26 @@
 #             - energies of impact photons   
 # 
 
+# %% [markdown]
+# ## Input / Output files
+# 
+# ### Input files
+# 
+# | File | Description |
+# |------|-------------|
+# | `{config_version}/`<br>`info_{filter}_{focus}_global_{flux}mCrab.csv` | Global summary CSV: total number of impacts per simulation for the given flux/filter/focus combination |
+# | `{config_version}/flux{flux}mcrab/sim_N/`<br>`00_info_{filter}_{focus}_simN_missing.csv` | Per-simulation CSV: list of missing (non-reconstructed) and bad-reconstructed photons with their energies and grades (one file per simulation) |
+# | `{config_version}/flux{flux}mcrab/sim_N/`<br>`crab_flux*_{filter}_{focus}_pixel{P}_piximpact.fits` | Pixel impact list FITS file: photon arrival times and IDs used to compute time separations between missing and bad-reconstructed partners |
+# | `{config_version}/flux{flux}mcrab/sim_N/`<br>`crab_flux*_{filter}_{focus}_evt.fits` | Sixtesim event list FITS file: reconstructed events with photon IDs and energies |
+# | `{config_version}/flux{flux}mcrab/sim_N/`<br>`crab_flux*_{filter}_{focus}_impact.fits` | Sixtesim impact list FITS file: full photon impact list (pre-reconstruction) with energies |
+# 
+# ### Output files
+# 
+# | File | Description |
+# |------|-------------|
+# | `{config_version}/Figures/missing_histo/`<br>`missed_{filter}_{focus}_{flux}mCrab.{pdf,png}` | Histogram of time separations between missed and bad-reconstructed photons (left panel) and energy distributions of impact, missed, and bad-reconstructed photons (right panel) |
+# | `{config_version}/Figures/missing_images/`<br>`missed_vs_badrecons_{filter}_{focus}_{flux}mCrab.{pdf,png}` | 2D map (image and contour) of missed photon energy vs bad-reconstructed photon energy |
+
 # %%
 from IPython.display import display, Image
 display(Image("images/pileup.png", width=350))
@@ -45,7 +65,7 @@ from astropy.visualization import hist
 
 import os
 import ast
-import auxiliary 
+import auxiliary as aux
 
 # %% [markdown]
 # ## Get parameters (check if running Jupyter notebook or Python script (Slurm))
@@ -58,7 +78,7 @@ def get_parameters():
     If running in a Jupyter Notebook, use default parameters.
     If running as a script (e.g., SLURM), parse command line arguments.
     """
-    if auxiliary.is_notebook():
+    if aux.is_notebook():
         # Default parameters for interactive use
         print("Running in notebook mode for source simulation")
         return {
@@ -72,14 +92,10 @@ def get_parameters():
         parser = argparse.ArgumentParser(description="Parameters for pairs detection analysis")
         parser.add_argument("--config_version", type=str, default="v5_20250621", help="Configuration version")
         parser.add_argument("--global_csv_file", type=str, default="info_nofilt_infoc_global_0.320mCrab.csv", help="Global CSV file")
-        parser.add_argument("--verbose", type=int, default=1, help="Verbosity level")
+        parser.add_argument("--verbose", type=int, default=0, help="Verbosity level")
         
         args = parser.parse_args()
-        return {
-            "config_version": args.config_version,
-            "global_csv_file": args.global_csv_file,
-            "verbose": args.verbose
-        }
+        return vars(args)
 
 # %% [markdown]
 # ### Get input parameters
@@ -88,18 +104,23 @@ def get_parameters():
 params = get_parameters()
 config_version = params["config_version"]
 global_csv_file = params["global_csv_file"]
-verbose = params["verbose"]
+global_csv_file = f"{config_version}/{global_csv_file}"
+aux.verbose = params["verbose"]
+print(params)
 
 # %%
 if not os.path.isfile(global_csv_file):
     raise FileNotFoundError(f"File {global_csv_file} not found")
+else:
+    aux.vprint(f"Using global CSV file: {global_csv_file}")
 
 # %% [markdown]
 # ### Derived parameters
 
 # %%
 nsims = 100
-sampling_rate=130210 #Hz
+## sampling_rate=130210 #Hz
+sampling_rate=130208.3 #Hz
 secondary_samples = 1563
 if config_version == "v3_20240917":
     close_dist_toxifusim = 100 #samples for close events to decide if xifusim simulation will be done
@@ -109,16 +130,15 @@ else:
     raise ValueError(f"Unknown config_version: {config_version}")
 
 pileup_dist = 30
-auxiliary.verbose = verbose
 
 # get filter from file name
-filter = global_csv_file.split("_")[1]
+filter = global_csv_file.split("_")[2]
 # get focus from file name
-focus = global_csv_file.split("_")[2]
+focus = global_csv_file.split("_")[3]
 # get flux from file name
-flux_mcrab = float(global_csv_file.split("_")[4].split("m")[0])
+flux_mcrab = float(global_csv_file.split("_")[5].split("m")[0])
 fluxDir = f"{os.getcwd()}/{config_version}/flux{flux_mcrab:.2f}mcrab/"
-print(f"Filter: {filter}, Focus: {focus}, Flux: {flux_mcrab} mCrab")
+aux.vprint(f"Filter: {filter}, Focus: {focus}, Flux: {flux_mcrab} mCrab")
 if flux_mcrab > 999.:
     nsims = 200
 
@@ -171,7 +191,7 @@ for i in range(nsims):
         # identify piximpact file for pixel
         piximpact_file = glob.glob(f"{fluxDir}/sim_{isim}/crab_flux{flux_mcrab:.2f}_Emin2_Emax10_exp*_RA0.0_Dec0.0_{filter}_{focus}_pixel{ipixel}_piximpact.fits")
         if len(piximpact_file) == 0:
-            print(f"sim {isim}, pixel {ipixel}: no piximpact file found")
+            aux.vprint(f"sim {isim}, pixel {ipixel}: no piximpact file found")
             raise ValueError("No piximpact file found")
         if len(piximpact_file) > 1:
             print(f"sim {isim}, pixel {ipixel}: more than one piximpact file found")
@@ -195,7 +215,7 @@ for i in range(nsims):
                        f"    bad-recons ph: {bad_recons_ph_id_irow}, energy: {bad_recons_energy_irow} \n"
                        f"    missing phs: {missing_phs_id_irow}, energies: {missing_energies_irow} \n"
                        f"    grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}")
-            auxiliary.vprint(message)
+            aux.vprint(message)
             if not isinstance(bad_recons_energy_irow, (int, float, np.float32, np.float64)):
                 message = (f"{bad_recons_energy_irow} (type: {type(bad_recons_energy_irow)}) is not a number")
                 raise ValueError(message)
@@ -204,33 +224,37 @@ for i in range(nsims):
             for imi in range(len(missing_phs_id_irow)):
                 imissing = missing_phs_id_irow[imi]
                 missing_energy = missing_energies_irow[imi]
+                if missing_energy == 0.:
+                    message = f"sim {isim}, pixel {ipixel}: missing ph {imissing} has zero energy - photon with E<0.2 keV are not simulated by xifusim"
+                    aux.vprint(message)
+                    continue
                 missing_time = time_piximpact[ph_id == imissing][0] 
                 bad_time = time_piximpact[ph_id == bad_recons_ph_id_irow][0]
                 time_diff_samples = np.abs(missing_time - bad_time)*sampling_rate
                 if time_diff_samples > close_dist_toxifusim:
                     # this should never happen, as only couples separated by less than close_dist_toxifusim are simulated
                     message = f"sim {isim}, pixel {ipixel}: missing ph {imissing} and bad ph {bad_recons_ph_id_irow} are separated by {time_diff_samples:.2f} samples"
-                    print(message)
+                    aux.vprint(message)
                     raise ValueError(message)
                 if time_diff_samples > pileup_dist:
                     message = f"Sim {isim}, pixel{ipixel}:Time difference between missing and bad reconstructed photons is too large:{time_diff_samples:.2f} samples"
-                    print(message)
+                    aux.vprint(message)
                     Ntimes_couples_far += 1
                 # append the minimum time difference to the list of missing distances
                 all_missing_distances.append(time_diff_samples)
                 all_missing_energies.append(missing_energy)
-                auxiliary.vprint(f"sim {isim}, pixel {ipixel}, missing ph {imissing}, bad ph {bad_recons_ph_id_irow}, min time diff {time_diff_samples:.2f}")
+                aux.vprint(f"sim {isim}, pixel {ipixel}, missing ph {imissing}, bad ph {bad_recons_ph_id_irow}, min time diff {time_diff_samples:.2f}")
             imissing0 = missing_phs_id_irow[0]
             
             # check bad-recons photons
             if bad_recons_grade2_irow <= secondary_samples:
-                auxiliary.vprint(f"........bad-recons ph {bad_recons_ph_id_irow}, grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}: SECONDARY")
+                aux.vprint(f"........bad-recons ph {bad_recons_ph_id_irow}, grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}: SECONDARY")
                 all_badrecons_energies_secondaries.append(bad_recons_energy_irow)
             elif bad_recons_grade1_irow == 8:
-                auxiliary.vprint(f"........bad-recons ph {bad_recons_ph_id_irow}, grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}: LOWRES")
+                aux.vprint(f"........bad-recons ph {bad_recons_ph_id_irow}, grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}: LOWRES")
                 all_badrecons_energies_lowres.append(bad_recons_energy_irow)
             else:
-                auxiliary.vprint(f"........bad-recons ph {bad_recons_ph_id_irow}, grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}: PRIMARY")
+                aux.vprint(f"........bad-recons ph {bad_recons_ph_id_irow}, grade1 {bad_recons_grade1_irow}, grade2 {bad_recons_grade2_irow}: PRIMARY")
                 all_badrecons_energies_primaries.append(bad_recons_energy_irow)
             all_badrecons_energies.append(bad_recons_energy_irow)
             # save energy of first missing photon for bad-recons photon
@@ -239,7 +263,7 @@ for i in range(nsims):
 
 # %%
 if Ntimes_couples_far > 0:
-    print(f"Number of times couples far: {Ntimes_couples_far}")
+    aux.vprint(f"Number of times couples far: {Ntimes_couples_far}")
 
 # %% [markdown]
 # ### Distribution of pileup separations and energies
@@ -251,13 +275,13 @@ global_table = pd.read_csv(global_csv_file)
 global_table = global_table[global_table["flux[mcrab]"] == float(flux_mcrab)]
 global_table = global_table[global_table["filter"] == filter]
 # get total number of impacts (for all 'simulation')
-print("Data from table:")
+aux.vprint("Data from table:")
 Nimpacts = global_table["Nimpacts"].sum()
-print(f"   Total number of impacts: {Nimpacts}")
+aux.vprint(f"   Total number of impacts: {Nimpacts}")
 Nmissing = len(all_missing_distances)
-print(f"   Total number of missing impacts: {Nmissing}")
+aux.vprint(f"   Total number of missed impacts: {Nmissing}")
 Nbadrecons = len(all_badrecons_energies)
-print(f"   Total number of bad reconstructed impacts: {Nbadrecons}")
+aux.vprint(f"   Total number of bad reconstructed impacts: {Nbadrecons}")
 
 # %%
 global_table
@@ -290,7 +314,7 @@ for isim in range(1,nsims+1):
     evt_file_sim = evt_file_sim[0]
     imp_file_sim = imp_file_sim[0]
         
-    print(f"Saving energy of photons in impact list for sim {isim}...")
+    aux.vprint(f"Saving energy of photons in impact list for sim {isim}...")
     # read PH_ID from evt_file and ENERGY from impact list
     with fits.open(evt_file_sim) as hdul:
         evt_data = hdul[1].data
@@ -302,8 +326,8 @@ for isim in range(1,nsims+1):
         imp_energy = imp_data["ENERGY"].copy()
     # get the ENERGY of the photons in the impact list whose PH_ID is in the evt list
     impact_energies_sim = imp_energy[np.isin(imp_ph_id, evt_ph_id)]
-    print(f"           Number of photons in impact list: {len(imp_ph_id)}")
-    print(f"           Number of photons in evt list: {len(evt_ph_id)}")
+    aux.vprint(f"           Number of photons in impact list: {len(imp_ph_id)}")
+    aux.vprint(f"           Number of photons in evt list: {len(evt_ph_id)}")
     Nimp_total += len(imp_ph_id)
     Nevt_total += len(evt_ph_id)
     # add energies to the list
@@ -320,24 +344,24 @@ for isim in range(1,nsims+1):
 # print summary
 Nlow_total = len([energy for energy in impact_energies if (energy < 0.2 and energy >0.)])
 Nbgd_total = len([energy for energy in impact_energies if (energy == 0)])
-print(f"Total number of impacts (table): {Nimpacts}")
-print(f"Total number of impact energies: {len(impact_energies)}")
-print(f"Total number of event energies: {Nevt_total}")
-print(f"Total number of total impacts (pre-sixtesim): {Nimp_total}")
-print(f"Total number of missing impacts: {Nmissing}")
-print(f"Total number of bad reconstructed impacts: {Nbadrecons}")
+aux.vprint(f"Total number of impacts (table): {Nimpacts}")
+aux.vprint(f"Total number of impact energies: {len(impact_energies)}")
+aux.vprint(f"Total number of event energies: {Nevt_total}")
+aux.vprint(f"Total number of total impacts (pre-sixtesim): {Nimp_total}")
+aux.vprint(f"Total number of missed impacts: {Nmissing}")
+aux.vprint(f"Total number of bad reconstructed impacts: {Nbadrecons}")
 nbadprim = len(all_badrecons_energies_primaries)
 nbadsec = len(all_badrecons_energies_secondaries)
 nbadlowres = len(all_badrecons_energies_lowres) 
-print(f"Number of bad reconstructed photons (primary): {nbadprim}")
-print(f"Number of bad reconstructed photons (secondary): {nbadsec}")
-print(f"Number of bad reconstructed photons (low-res): {nbadlowres}")
-print(f"Number of events with energy < 0.2 keV: {Nlow_total}")
-print(f"BGD events with 0 energy: {Nbgd_total}")
+aux.vprint(f"Number of bad reconstructed photons (primary): {nbadprim}")
+aux.vprint(f"Number of bad reconstructed photons (secondary): {nbadsec}")
+aux.vprint(f"Number of bad reconstructed photons (low-res): {nbadlowres}")
+aux.vprint(f"Number of events with energy < 0.2 keV: {Nlow_total}")
+aux.vprint(f"BGD events with 0 energy: {Nbgd_total}")
 
 
 # %% [markdown]
-# ### Histogram of distribution of missing photons
+# ### Histogram of distribution of missed photons
 
 # %%
 # create a figure with two plots
@@ -345,19 +369,19 @@ fig, (ax1,ax2) = plt.subplots(1,2, figsize=(12,6))
 # In ax1: plot histogram of distances (in samples) for missing photons
 # =====================================================================
 #ncts_bin, seps_bins, handle_seps = hist(all_missing_distances, bins='scott', ax=ax1, edgecolor='black')
-#print(f"Bin size = {seps_bins[1]-seps_bins[0]:.2f} samples")
+#aux.vprint(f"Bin size = {seps_bins[1]-seps_bins[0]:.2f} samples")
 bin_size = 1 # samples
 seps_bins = np.arange(0, 110, bin_size)
 ncts_bin, seps_bins, handle_seps = hist(all_missing_distances, bins=seps_bins, ax=ax1, edgecolor='black')
 # set x axis limits
 ax1.set_xlim(0, 110)
 ax1.set_xlabel("Time difference (samples)")
-ax1.set_ylabel("# missing photons")
-ax1.set_title("Time separations of missing photons")
+ax1.set_ylabel("# missed photons")
+ax1.set_title("Time separations of missed photons")
 # write text on the plot: number of simulations, flux, exposure, sampling rate
 text = (f"nsims = {nsims}\n"
         f"Nimpacts = {Nimpacts}\n"
-        f"Nmissing = {Nmissing}\n"
+        f"Nmissed = {Nmissing}\n"
         f"Nbadrecons = {Nbadrecons}\n"
         f"flux = {flux_mcrab} mCrab\n"
         f"Filter = {filter}\n"
@@ -377,7 +401,7 @@ bin_size = 0.2 # keV
 miss_bins = np.arange(0, 12., bin_size)
 
 Ncts_bin, _, handle_miss = hist(all_missing_energies,ax=ax2, alpha=0.8, bins=miss_bins, histtype='step',
-                                        label=["missing photons"], color='C0', log=True)
+                                        label=["missed photons"], color='C0', log=True)
 
 _, _, handle_bad = hist(all_badrecons_energies,ax=ax2,alpha=0.8, bins=miss_bins, histtype='step',
                         label=["bad-recons photons\n(prim+second+low-res)"], color='C1',log=True)
@@ -422,8 +446,8 @@ plt.show()
 
 # %%
 # save image to PDF file
-fig.savefig(f"{config_version}/Figures/missing_histo/missing_{filter}_{focus}_{flux_mcrab:.2f}mCrab.pdf", bbox_inches='tight')
-fig.savefig(f"{config_version}/Figures/missing_histo/missing_{filter}_{focus}_{flux_mcrab:.2f}mCrab.png", dpi=300, bbox_inches='tight')
+fig.savefig(f"{config_version}/Figures/missing_histo/missed_{filter}_{focus}_{flux_mcrab:.2f}mCrab.pdf", bbox_inches='tight')
+fig.savefig(f"{config_version}/Figures/missing_histo/missed_{filter}_{focus}_{flux_mcrab:.2f}mCrab.png", dpi=300, bbox_inches='tight')
 
 # %%
 """
@@ -469,8 +493,8 @@ ax2.set_ylabel("Bad-reconstructed photon energy (keV)")
 cbar = plt.colorbar(contour, ax=ax2)
 cbar.set_label("# photons")
 # save image to PDF file
-fig.savefig(f"{config_version}/Figures/missing_images/missing_vs_badrecons_{filter}_{focus}_{flux_mcrab:.2f}mCrab.pdf", bbox_inches='tight')
-fig.savefig(f"{config_version}/Figures/missing_images/missing_vs_badrecons_{filter}_{focus}_{flux_mcrab:.2f}mCrab.png", bbox_inches='tight', dpi=300)
+fig.savefig(f"{config_version}/Figures/missing_images/missed_vs_badrecons_{filter}_{focus}_{flux_mcrab:.2f}mCrab.pdf", bbox_inches='tight')
+fig.savefig(f"{config_version}/Figures/missing_images/missed_vs_badrecons_{filter}_{focus}_{flux_mcrab:.2f}mCrab.png", bbox_inches='tight', dpi=300)
 
 
 # %%

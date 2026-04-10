@@ -20,7 +20,7 @@ csvs=('info_nofilt_infoc_global_0.320mCrab.csv' \
 	  'info_thickBe_defoc_global_1000.000mCrab.csv')
 config_version="v5_20250621"
 echo "Using ${csvs[$icpu]}"
-python3 ./execute_missing_analysis.py --config_version=${config_version}  --csv=${csvs[$icpu]} --verbose=1
+python3 ./execute_missing_analysis.py --config_version=${config_version}  --global_csv_file=${csvs[$icpu]} --verbose=0
 
 
 
