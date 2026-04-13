@@ -83,7 +83,7 @@ def get_parameters():
         print("Running in notebook mode for source simulation")
         return {
             "config_version": "v5_20250621",
-            "global_csv_file": "info_nofilt_infoc_global_0.320mCrab.csv",
+            "global_csv_file": "info_nofilt_defoc_global_100.000mCrab.csv",
             "verbose": 1
         }
     else:
@@ -282,6 +282,8 @@ Nmissing = len(all_missing_distances)
 aux.vprint(f"   Total number of missed impacts: {Nmissing}")
 Nbadrecons = len(all_badrecons_energies)
 aux.vprint(f"   Total number of bad reconstructed impacts: {Nbadrecons}")
+exposure_time = global_table["exposure[s]"][0]
+aux.vprint(f"   Exposure time: {exposure_time} s")
 
 # %%
 global_table
@@ -368,8 +370,6 @@ aux.vprint(f"BGD events with 0 energy: {Nbgd_total}")
 fig, (ax1,ax2) = plt.subplots(1,2, figsize=(12,6))
 # In ax1: plot histogram of distances (in samples) for missing photons
 # =====================================================================
-#ncts_bin, seps_bins, handle_seps = hist(all_missing_distances, bins='scott', ax=ax1, edgecolor='black')
-#aux.vprint(f"Bin size = {seps_bins[1]-seps_bins[0]:.2f} samples")
 bin_size = 1 # samples
 seps_bins = np.arange(0, 110, bin_size)
 ncts_bin, seps_bins, handle_seps = hist(all_missing_distances, bins=seps_bins, ax=ax1, edgecolor='black')
@@ -380,6 +380,7 @@ ax1.set_ylabel("# missed photons")
 ax1.set_title("Time separations of missed photons")
 # write text on the plot: number of simulations, flux, exposure, sampling rate
 text = (f"nsims = {nsims}\n"
+        f"Exposure time = {exposure_time} s\n"
         f"Nimpacts = {Nimpacts}\n"
         f"Nmissed = {Nmissing}\n"
         f"Nbadrecons = {Nbadrecons}\n"
@@ -394,49 +395,51 @@ ax1.text(0.5, 0.95, text, transform=ax1.transAxes, fontsize=10, verticalalignmen
 
 # In ax2: plot histogram of energies of impact photons, missing photons and bad-reconstructed photons
 # ====================================================================================================
-#Ncts_bin, miss_bins, handle_miss = hist(all_missing_energies,ax=ax2, alpha=0.8, bins='scott',histtype='step',
-#                                        label=["missing photons"], color='C0', log=True)
-#bin_size = miss_bins[1] - miss_bins[0]
 bin_size = 0.2 # keV
 miss_bins = np.arange(0, 12., bin_size)
 
-Ncts_bin, _, handle_miss = hist(all_missing_energies,ax=ax2, alpha=0.8, bins=miss_bins, histtype='step',
-                                        label=["missed photons"], color='C0', log=True)
+# Background reference — light fill, no hatch
+_, _, handle_all = hist(impact_energies, ax=ax2, alpha=0.3, bins=miss_bins,
+                        label=["impact photons"], color='C7', log=True)
 
-_, _, handle_bad = hist(all_badrecons_energies,ax=ax2,alpha=0.8, bins=miss_bins, histtype='step',
-                        label=["bad-recons photons\n(prim+second+low-res)"], color='C1',log=True)
+# Main results — hatched fills so overlapping regions remain readable
+_, _, handle_bad = hist(all_badrecons_energies, ax=ax2, bins=miss_bins,
+                        hatch='\\\\', edgecolor='C1', color='C1', alpha=0.5,
+                        label=["bad-recons photons\n(prim+second+low-res)"], log=True)
+Ncts_bin, _, handle_miss = hist(all_missing_energies, ax=ax2, bins=miss_bins,
+                                color='C0', alpha=0.6,
+                                label=["missed photons"], log=True)
 
-if len(all_badrecons_energies_primaries) > 0:
-    _, _, handle_prim = hist(all_badrecons_energies_primaries,ax=ax2,alpha=0.5, bins=miss_bins,histtype='step',label=[f"bad-recons photons\n(primary):{nbadprim}"],color='C2', log=True)
-if len(all_badrecons_energies_secondaries) > 0:
-    _, _, handle_sec = hist(all_badrecons_energies_secondaries,ax=ax2,alpha=0.5, bins=miss_bins,label=[f"bad-recons photons\n(secondary):{nbadsec}"], color='C3',log=True)
-if len(all_badrecons_energies_lowres) > 0:
-    _, _, handle_low = hist(all_badrecons_energies_lowres,ax=ax2,alpha=0.5, bins=miss_bins,label=[f"bad-recons photons\n(low-res):{nbadlowres}"], color='C4',log=True)
-# add evt photon energy distribution to histogram
-_, _, handle_all = hist(impact_energies,ax=ax2,alpha=0.3, bins=miss_bins,label=["impact photons"], color='C8',log=True)
-# plot a vertical line at 0.2 keV
-handle_xifu = ax2.axvline(x=0.2, color='r', linestyle='--', alpha=0.5, label="X-IFU threshold")
-
-# add re-scaled "handle_all" histogram to see if it keeps the same shape than the missing histogram
+# Rescaled impact — step line for shape comparison
 all_np_hist, _ = np.histogram(impact_energies, bins=miss_bins)
 scaling_factor = Ncts_bin.sum() / all_np_hist.sum() # miss/all
 rescaled_all = all_np_hist * scaling_factor
-# Plot the rescaled histogram
-handle_re = ax2.step(miss_bins[:-1], rescaled_all, where='mid', linestyle=':', color='black', 
-         label="impact photons (rescaled)", alpha=0.8)
+handle_re = ax2.step(miss_bins[:-1], rescaled_all, where='mid', linestyle=':', color='black',
+                     label="impact photons (rescaled)", alpha=0.8)
 
-# get the y-axis limits
+# Sub-categories of bad-reconstructed — step only (no fill, no blending)
+if len(all_badrecons_energies_primaries) > 0:
+    _, _, handle_prim = hist(all_badrecons_energies_primaries, ax=ax2, bins=miss_bins, histtype='step',
+                             label=[f"bad-recons photons\n(primary):{nbadprim}"], color='C2', log=True)
+if len(all_badrecons_energies_secondaries) > 0:
+    _, _, handle_sec = hist(all_badrecons_energies_secondaries, ax=ax2, bins=miss_bins, histtype='step',
+                            label=[f"bad-recons photons\n(secondary):{nbadsec}"], color='C4', log=True)
+if len(all_badrecons_energies_lowres) > 0:
+    _, _, handle_low = hist(all_badrecons_energies_lowres, ax=ax2, bins=miss_bins, histtype='step', alpha=0.5,
+                            label=[f"bad-recons photons\n(low-res):{nbadlowres}"], color='C3', log=True)
+
+# Vertical line at X-IFU energy threshold
+handle_xifu = ax2.axvline(x=0.2, color='r', linestyle='--', alpha=0.5, label="X-IFU threshold")
+
+# Axis limits
 ymin, ymax = ax2.get_ylim()
-ymin = 0.9
-# set the y-axis limits
-ax2.set_ylim(ymin, ymax)
-# set x axis limits
+ax2.set_ylim(0.9, ymax)
 ax2.set_xlim(0, 12)
 
-# add legend in an specific order
-handles = [handle_all[0], handle_miss[0], handle_bad[0], handle_prim[0], handle_sec[0], handle_low[0], handle_re[0],handle_xifu]
+# Legend — force patches fully opaque so hatch colours match exactly
+handles = [handle_all[0], handle_miss[0], handle_bad[0], handle_prim[0], handle_sec[0], handle_low[0], handle_re[0], handle_xifu]
 labels = [h.get_label() for h in handles]
-ax2.legend(handles, labels, loc='upper right', fontsize=8, frameon=False)
+leg = ax2.legend(handles, labels, loc='upper right', fontsize=8, frameon=False)
 
 ax2.set_xlabel("Energy (keV)")
 ax2.set_ylabel(f"# photons/{bin_size:.2f}keV")
@@ -476,7 +479,7 @@ fig.suptitle(f"Missing vs Bad-reconstructed photons: {flux_mcrab} mCrab, {filter
 # plot the histogram as an image
 im = ax1.imshow(histo_miss_bad[0], cmap='hot', interpolation='nearest', origin='lower', extent=[0, 10, 0, 10])
 # label x as "Missing photon energy (keV)"
-ax1.set_xlabel(" (1st) Missing photon energy (keV)")
+ax1.set_xlabel(" (1st) Missed photon energy (keV)")
 # label y as "Bad-reconstructed photon energy (keV)"
 ax1.set_ylabel("Bad-reconstructed photon energy (keV)")
 # add colorbar
@@ -486,7 +489,7 @@ cbar.set_label("# photons")
 # plot the histogram as a contour plot
 contour = ax2.contour(histo_miss_bad[0], levels=10, cmap='hot', extent=[0, 10, 0, 10])
 # label x as "Missing photon energy (keV)"
-ax2.set_xlabel(" (1st) Missing photon energy (keV)")
+ax2.set_xlabel(" (1st) Missed photon energy (keV)")
 # label y as "Bad-reconstructed photon energy (keV)"
 ax2.set_ylabel("Bad-reconstructed photon energy (keV)")
 # add colorbar
