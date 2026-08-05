@@ -66,3 +66,17 @@ SIRENA reconstructions repeated to solve Tstart assignation when Lags (parabola)
 
 # April 2026
 rerun all sirena files and all the *analysis* (not simulations). For the plots I've modified the sampling rate to 130208.3 which is the correct. It is only kept as 130210 in the simulate_source.ipynb so as not to mess around with photons selected for simulation or with exposure times.
+
+# 27 May 2026
+I reprocess SIRENA files for single pulses to be able to use AVG4SD as a discriminatory quantity for flagging.
+Simulations were reconstructed with SIRENA with DDS but singles were inherited from CEA processing (no DDS). AVG4SD were not comparable
+Singles are reprocessed with DDS.
+
+# 24/06/2026
+Update of SIRENA to include new criteria for parabola (move forward when points increase monotonically) and to correct AVG4SD that was failing when LAGS=1.
+Simulations reconstructed again with this new SIRENA
+
+# 09 July 2026
+We need to modify how the parabola is working in case of pileup: by default it uses 9 lags (+/- 4) to do the parabola and look for the maximum. But if there is another pulse in that interval, the parabola is contaminated. New implementation: extend the parabola only the lags free from another pulse. SIRENA knows in advance where are the pulses that have been already detected (it knows the trigger points).
+Note: talnking to Bea, we just realized that this is not the case because if a secondary pulse is closer than 8 samples there is no reconstruction at all. There is contamination by a preceding pulse beacause of the pretrigger but this cannot be avoided: PEnding question iswhat to do with secondaries?????
+Found a bug in SIRENA 15.4.1: The lag corrections were being applied twice because, in previous versions, tstartNewDev did not include the lag contribution, whereas it does now. Corrected in v15.5.0. SIRENA files reconstructed on July 17.
